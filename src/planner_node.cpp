@@ -30,16 +30,21 @@
 
 #include <boost/thread/mutex.hpp>
 #include <random>
+#include <vector>
+#include <algorithm>
 
 #include <visualization_msgs/Marker.h>
 #include <visualization_msgs/MarkerArray.h>
 
 #include <geometry_msgs/PoseArray.h>
 
-#include "octomap_vpp/RoiOcTree.h"
-#include "octomap_vpp/roioctree_utils.h"
+#include <octomap_vpp/RoiOcTree.h>
+#include <octomap_vpp/CountingOcTree.h>
+#include <octomap_vpp/WorkspaceOcTree.h>
+#include <octomap_vpp/roioctree_utils.h>
 
 octomap_vpp::RoiOcTree testTree(0.02);
+octomap_vpp::WorkspaceOcTree *workspaceTree = NULL;
 tf2_ros::Buffer tfBuffer(ros::Duration(30));
 ros::Publisher octomapPub;
 ros::Publisher inflatedOctomapPub;
@@ -47,6 +52,7 @@ ros::Publisher pcGlobalPub;
 ros::Publisher pointVisPub;
 ros::Publisher viewArrowVisPub;
 ros::Publisher poseArrayPub;
+ros::Publisher workspaceTreePub;
 //ros::Publisher planningScenePub;
 
 boost::mutex tree_mtx;
@@ -335,6 +341,12 @@ std::vector<Viewpoint> sampleAroundMultiROICenters(const std::vector<octomap::po
     {
       octomap::KeyRay ray;
       octomap::point3d spherePoint = sampleRandomPointOnSphere(center, dist);
+
+      if (workspaceTree != NULL && workspaceTree->search(spherePoint) == NULL) // workspace specified and sampled point not in workspace
+      {
+        continue;
+      }
+
       testTree.computeRayKeys(center, spherePoint, ray);
       bool view_occluded = false;
       bool has_left_roi = false;
@@ -598,6 +610,52 @@ void sampleAroundROICenter(const octomap::point3d &center, const double &dist,  
 
 }
 
+double computeExpectedRayIGinWorkspace(const octomap::KeyRay &ray)
+{
+  double expected_gain = 0;
+  //double curProb = 1;
+  for (const octomap::OcTreeKey &key : ray)
+  {
+    float logOdds = testTree.keyToLogOdds(key);
+    double gain = testTree.computeExpectedInformationGain(logOdds);
+    double reachability = workspaceTree ? workspaceTree->getReachability(key) : 1.0; // default to 1 if reachability not specified
+    const double RB_WEIGHT = 0.5;
+    double weightedGain = RB_WEIGHT * reachability + (1 - RB_WEIGHT) * gain;
+    expected_gain += /*curProb * */weightedGain;
+    //curProb *= 1 - octomap::probability(logOdds);
+    //if (curProb < 0.05) // stop checking cells if probability of being hit is low
+    //  break;
+    if (logOdds > octomap::logodds(0.9)) // stop if cell is likely occupied
+      break;
+  }
+  return expected_gain;
+}
+
+double computeViewpointWorkspaceValue(const octomap::pose6d &viewpoint, const double &hfov, size_t x_steps, size_t y_steps, const double &maxRange, bool use_roi_weighting = true)
+{
+  double f_rec =  2 * tan(hfov / 2) / (double)x_steps;
+  double cx = (double)x_steps / 2.0;
+  double cy = (double)y_steps / 2.0;
+  double value = 0;
+  for (size_t i = 0; i < x_steps; i++)
+  {
+    for(size_t j = 0; j < y_steps; j++)
+    {
+      double x = (i + 0.5 - cx) * f_rec;
+      double y = (j + 0.5 - cy) * f_rec;
+      octomap::point3d dir(x, y, 1.0);
+      octomap::point3d end = dir * maxRange;
+      end = viewpoint.transform(end);
+      octomap::KeyRay ray;
+      testTree.computeRayKeys(viewpoint.trans(), end, ray);
+      double gain = computeExpectedRayIGinWorkspace(ray);
+      //ROS_INFO_STREAM("Ray (" << i << ", " << j << ") from " << viewpoint.trans() << " to " << end << ": " << ray.size() << " Keys, Gain: " << gain);
+      value += gain;
+    }
+  }
+  return value;
+}
+
 bool hasDirectUnkownNeighbour(const octomap::OcTreeKey &key, unsigned int depth = 0)
 {
   for (int i = 0; i < 6; i++)
@@ -713,6 +771,10 @@ std::vector<Viewpoint> getBorderPoints(const octomap::point3d &pmin, const octom
 
   for (auto it = testTree.begin_leafs_bbx(pmin, pmax), end = testTree.end_leafs_bbx(); it != end; it++)
   {
+    if (workspaceTree != NULL && workspaceTree->search(it.getKey()) == NULL) // workspace specified and sampled point not in workspace
+    {
+      continue;
+    }
     if (it->getLogOdds() < 0) // is node free; TODO: replace with bounds later
     {
       if (hasDirectUnkownNeighbour(it.getKey()))
@@ -726,6 +788,11 @@ std::vector<Viewpoint> getBorderPoints(const octomap::point3d &pmin, const octom
         double rotAng = viewDir.angle(dirVecTf);
         tf2::Quaternion toRot(rotAx, rotAng);
         vp.orientation = toRot * camQuat;
+        octomap::pose6d viewpose(vp.point, octomath::Quaternion(vp.orientation.w(), vp.orientation.x(), vp.orientation.y(), vp.orientation.z()));
+        vp.infoGain = computeViewpointWorkspaceValue(viewpose, 80.0 * M_PI / 180.0, 8, 6, 5.0);
+        vp.distance = (vp.point - camPos).norm();
+        vp.utility = vp.infoGain - 0.2 * vp.distance;
+        vp.isFree = true;
         sampledPoints.push_back(vp);// add node to border list
       }
     }
@@ -823,6 +890,42 @@ int main(int argc, char **argv)
   pointVisPub = nh.advertise<visualization_msgs::Marker>("border_marker", 1);
   viewArrowVisPub = nh.advertise<visualization_msgs::MarkerArray>("roi_vp_marker", 1);
   poseArrayPub = nh.advertise<geometry_msgs::PoseArray>("vp_array", 1);
+  workspaceTreePub = nh.advertise<octomap_msgs::Octomap>("workspace_tree", 1, true);
+
+  // Load workspace if specified
+  if (argc > 1)
+  {
+    octomap::AbstractOcTree *tree = octomap::AbstractOcTree::read(argv[1]);
+    octomap_vpp::CountingOcTree *countingTree = dynamic_cast<octomap_vpp::CountingOcTree*>(tree);
+
+    if (countingTree) // convert to workspace tree if counting tree loaded
+    {
+      workspaceTree = new octomap_vpp::WorkspaceOcTree(*countingTree);
+    }
+    else
+    {
+      workspaceTree = dynamic_cast<octomap_vpp::WorkspaceOcTree*>(tree);
+    }
+
+    if (!workspaceTree)
+    {
+      ROS_ERROR("Tree type not recognized; please load either CountingOcTree or WorkspaceOcTree");
+      return -2;
+    }
+
+    octomap_msgs::Octomap ws_msg;
+    ws_msg.header.frame_id = "world";
+    ws_msg.header.stamp = ros::Time::now();
+    bool msg_generated = octomap_msgs::fullMapToMsg(*workspaceTree, ws_msg);
+    if (msg_generated)
+    {
+      workspaceTreePub.publish(ws_msg);
+    }
+  }
+  else
+  {
+    ROS_WARN("Workspace not specified");
+  }
 
   message_filters::Subscriber<sensor_msgs::PointCloud2> depthCloudSub(nh, PC_TOPIC, 1);
   //tf2_ros::MessageFilter<sensor_msgs::PointCloud2> tfCloudFilter(depthCloudSub, tfBuffer, MAP_FRAME, 1, nh);
@@ -895,8 +998,8 @@ int main(int argc, char **argv)
     tf2::Quaternion camQuat;
     tf2::fromMsg(camFrameTf.transform.rotation, camQuat);
 
-    //std::vector<Viewpoint> borderVps = getBorderPoints(box_min, box_max, octomap::point3d(camOrig.x, camOrig.y, camOrig.z), camQuat);
-    //publishViewpointVisualizations(borderVps);
+    std::vector<Viewpoint> borderVps = getBorderPoints(box_min, box_max, octomap::point3d(camOrig.x, camOrig.y, camOrig.z), camQuat);
+    publishViewpointVisualizations(borderVps);
 
     std::vector<octomap::point3d> clusterCenters = testTree.getClusterCenters();
     ROS_INFO_STREAM("ROI count: " << testTree.getRoiSize() << "; Clusters: " << clusterCenters.size());
@@ -905,8 +1008,10 @@ int main(int argc, char **argv)
       ROS_INFO_STREAM("Cluster center: " << clusterCenters[i]);
       sampleAroundROICenter(clusterCenters[i], 0.5, octomap::point3d(camOrig.x, camOrig.y, camOrig.z), camQuat, i);
     }*/
-    std::vector<Viewpoint> nextViewpoints = sampleAroundMultiROICenters(clusterCenters, 0.5, octomap::point3d(camOrig.x, camOrig.y, camOrig.z), camQuat);
-    publishViewpointVisualizations(nextViewpoints);
+    std::vector<Viewpoint> roiViewpoints = sampleAroundMultiROICenters(clusterCenters, 0.5, octomap::point3d(camOrig.x, camOrig.y, camOrig.z), camQuat);
+    publishViewpointVisualizations(roiViewpoints);
+
+    std::vector<Viewpoint> &nextViewpoints = borderVps; //roiViewpoints;
 
     auto vpComp = [](const Viewpoint &a, const Viewpoint &b)
     {
