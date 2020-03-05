@@ -43,6 +43,8 @@
 #include <octomap_vpp/WorkspaceOcTree.h>
 #include <octomap_vpp/roioctree_utils.h>
 
+#include "sample.h"
+
 octomap_vpp::RoiOcTree testTree(0.02);
 octomap_vpp::WorkspaceOcTree *workspaceTree = NULL;
 tf2_ros::Buffer tfBuffer(ros::Duration(30));
@@ -63,6 +65,14 @@ const double FREE_THRESH = 0.3;
 const std::string MAP_FRAME = "world";
 const std::string PC_TOPIC = "/move_group/filtered_cloud"; //"/camera/depth/points";
 const std::string PC_GLOBAL = "/points_global";
+
+//const std_msgs::ColorRGBA COLOR_RED = {.r = 1.f, .g = 0.f, .b = 0.f, .a = 1.f};
+//const std_msgs::ColorRGBA COLOR_GREEN = {1.f, 1.f, 0.f, 1.f};
+//const std_msgs::ColorRGBA COLOR_BLUE = {0.f, 0.f, 1.f, 1.f};
+
+const std_msgs::ColorRGBA COLOR_RED = []{std_msgs::ColorRGBA c; c.r = 1.f; c.g = 0.f; c.b = 0.f; c.a = 1.f; return c; } ();
+const std_msgs::ColorRGBA COLOR_GREEN = []{std_msgs::ColorRGBA c; c.r = 0.f; c.g = 1.f; c.b = 0.f; c.a = 1.f; return c; } ();
+const std_msgs::ColorRGBA COLOR_BLUE = []{std_msgs::ColorRGBA c; c.r = 0.f; c.g = 0.f; c.b = 1.f; c.a = 1.f; return c; } ();
 
 /*void publishOctomapToPlanningScene(const octomap_msgs::Octomap &map_msg)
 {
@@ -333,7 +343,7 @@ std::vector<Viewpoint> sampleAroundMultiROICenters(const std::vector<octomap::po
   std::vector<Viewpoint> sampledPoints;
   if (centers.empty()) return sampledPoints;
   ros::Time samplingStartTime = ros::Time::now();
-  const size_t TOTAL_SAMPLE_TRIES = 500;
+  const size_t TOTAL_SAMPLE_TRIES = 200;
   size_t samples_per_center = TOTAL_SAMPLE_TRIES / centers.size();
   for (const octomap::point3d &center : centers)
   {
@@ -409,8 +419,9 @@ std::vector<Viewpoint> sampleAroundMultiROICenters(const std::vector<octomap::po
   return sampledPoints;
 }
 
-void publishViewpointVisualizations(const std::vector<Viewpoint> &viewpoints)
+void publishViewpointVisualizations(const std::vector<Viewpoint> &viewpoints, const std::string &ns, const std_msgs::ColorRGBA &color = COLOR_RED)
 {
+  static std::unordered_map<std::string, size_t> last_marker_counts;
   visualization_msgs::MarkerArray markers;
   geometry_msgs::PoseArray poseArr;
   poseArr.header.frame_id = "world";
@@ -420,7 +431,7 @@ void publishViewpointVisualizations(const std::vector<Viewpoint> &viewpoints)
     visualization_msgs::Marker marker;
     marker.header.frame_id = "world";
     marker.header.stamp = ros::Time();
-    marker.ns = "roiPoints";
+    marker.ns = ns;
     marker.id = i;
     marker.type = visualization_msgs::Marker::ARROW;
     marker.action = visualization_msgs::Marker::ADD;
@@ -433,11 +444,8 @@ void publishViewpointVisualizations(const std::vector<Viewpoint> &viewpoints)
     marker.pose.orientation.w = 1.0;
     marker.scale.x = 0.01;
     marker.scale.y = 0.02;
-    marker.color.a = 1.0;
-    marker.color.r = 1.0;
-    marker.color.g = 0.0;
-    marker.color.b = 0.0;
-    marker.lifetime = ros::Duration(2);
+    marker.color = color;
+    //marker.lifetime = ros::Duration(2);
     marker.points.push_back(octomap::pointOctomapToMsg(viewpoints[i].point));
     marker.points.push_back(octomap::pointOctomapToMsg(viewpoints[i].target));
     markers.markers.push_back(marker);
@@ -445,7 +453,7 @@ void publishViewpointVisualizations(const std::vector<Viewpoint> &viewpoints)
     visualization_msgs::Marker textMarker;
     textMarker.header.frame_id = "world";
     textMarker.header.stamp = ros::Time();
-    textMarker.ns = "roiPoints_texts";
+    textMarker.ns = ns + "_texts";
     textMarker.id = i;
     textMarker.type = visualization_msgs::Marker::TEXT_VIEW_FACING;
     textMarker.action = visualization_msgs::Marker::ADD;
@@ -457,12 +465,9 @@ void publishViewpointVisualizations(const std::vector<Viewpoint> &viewpoints)
     textMarker.pose.orientation.z = 0.0;
     textMarker.pose.orientation.w = 1.0;
     textMarker.scale.z = 0.05;
-    textMarker.color.a = 1.0;
-    textMarker.color.r = 1.0;
-    textMarker.color.g = 0.0;
-    textMarker.color.b = 0.0;
-    textMarker.lifetime = ros::Duration(2);
-    textMarker.text = std::to_string(viewpoints[i].infoGain) + ", " + std::to_string(viewpoints[i].distance) + ", " + std::to_string(viewpoints[i].isFree);
+    textMarker.color = color;
+    //textMarker.lifetime = ros::Duration(2);
+    textMarker.text = std::to_string(viewpoints[i].infoGain) + ", " + std::to_string(viewpoints[i].distance) + ", " + std::to_string(viewpoints[i].utility);
     markers.markers.push_back(textMarker);
 
     geometry_msgs::Pose pose;
@@ -470,6 +475,28 @@ void publishViewpointVisualizations(const std::vector<Viewpoint> &viewpoints)
     pose.orientation = tf2::toMsg(viewpoints[i].orientation);
     poseArr.poses.push_back(pose);
   }
+  size_t last_marker_count = last_marker_counts[ns];
+  ROS_INFO_STREAM("Last Marker count namespace: " << ns << ": " << last_marker_count << "; current: " << viewpoints.size());
+  for (size_t i = viewpoints.size(); i < last_marker_count; i++)
+  {
+    visualization_msgs::Marker marker;
+    marker.header.frame_id = "world";
+    marker.header.stamp = ros::Time();
+    marker.ns = ns;
+    marker.id = i;
+    marker.type = visualization_msgs::Marker::ARROW;
+    marker.action = visualization_msgs::Marker::DELETE;
+    markers.markers.push_back(marker);
+    visualization_msgs::Marker textMarker;
+    textMarker.header.frame_id = "world";
+    textMarker.header.stamp = ros::Time();
+    textMarker.ns = ns + "_texts";
+    textMarker.id = i;
+    textMarker.type = visualization_msgs::Marker::TEXT_VIEW_FACING;
+    textMarker.action = visualization_msgs::Marker::DELETE;
+    markers.markers.push_back(textMarker);
+  }
+  last_marker_counts[ns] = viewpoints.size();
   viewArrowVisPub.publish(markers);
   poseArrayPub.publish(poseArr);
 }
@@ -616,18 +643,38 @@ double computeExpectedRayIGinWorkspace(const octomap::KeyRay &ray)
   //double curProb = 1;
   for (const octomap::OcTreeKey &key : ray)
   {
-    float logOdds = testTree.keyToLogOdds(key);
+    octomap_vpp::RoiOcTreeNode *node = testTree.search(key);
+    float reachability = workspaceTree ? workspaceTree->getReachability(key) : 1.f;
+    if (reachability > 0) reachability = 1.f; // Test: binarize reachability
+    if (node == NULL)
+    {
+      expected_gain += reachability;
+      continue;
+    }
+    double occ = node->getOccupancy();
+    if (occ > 0.6) // View is blocked
+    {
+      break;
+    }
+    else if (occ > 0.4) // unknown
+    {
+      expected_gain += reachability;
+    }
+    /*float logOdds = testTree.keyToLogOdds(key);
     double gain = testTree.computeExpectedInformationGain(logOdds);
     double reachability = workspaceTree ? workspaceTree->getReachability(key) : 1.0; // default to 1 if reachability not specified
-    const double RB_WEIGHT = 0.5;
-    double weightedGain = RB_WEIGHT * reachability + (1 - RB_WEIGHT) * gain;
-    expected_gain += /*curProb * */weightedGain;
+    //const double RB_WEIGHT = 0.5;
+    double weightedGain = reachability * gain;//RB_WEIGHT * reachability + (1 - RB_WEIGHT) * gain;
+    expected_gain += weightedGain; // * curProb
     //curProb *= 1 - octomap::probability(logOdds);
     //if (curProb < 0.05) // stop checking cells if probability of being hit is low
     //  break;
     if (logOdds > octomap::logodds(0.9)) // stop if cell is likely occupied
-      break;
+      break;*/
   }
+  if (ray.size() > 0)
+    expected_gain /= ray.size();
+
   return expected_gain;
 }
 
@@ -653,6 +700,7 @@ double computeViewpointWorkspaceValue(const octomap::pose6d &viewpoint, const do
       value += gain;
     }
   }
+  value /= x_steps * y_steps;
   return value;
 }
 
@@ -769,6 +817,8 @@ std::vector<Viewpoint> getBorderPoints(const octomap::point3d &pmin, const octom
 
   tree_mtx.lock();
 
+  std::vector<octomap::OcTreeKey> viewpoint_candidates;
+
   for (auto it = testTree.begin_leafs_bbx(pmin, pmax), end = testTree.end_leafs_bbx(); it != end; it++)
   {
     if (workspaceTree != NULL && workspaceTree->search(it.getKey()) == NULL) // workspace specified and sampled point not in workspace
@@ -779,23 +829,34 @@ std::vector<Viewpoint> getBorderPoints(const octomap::point3d &pmin, const octom
     {
       if (hasDirectUnkownNeighbour(it.getKey()))
       {
-        Viewpoint vp;
-        vp.point = it.getCoordinate();
-        octomath::Vector3 dirVec = computeUnknownDir(it.getKey());
-        vp.target = vp.point + dirVec;
-        tf2::Vector3 dirVecTf = tf2::Vector3(dirVec.x(), dirVec.y(), dirVec.z());
-        tf2::Vector3 rotAx = viewDir.cross(dirVecTf);
-        double rotAng = viewDir.angle(dirVecTf);
-        tf2::Quaternion toRot(rotAx, rotAng);
-        vp.orientation = toRot * camQuat;
-        octomap::pose6d viewpose(vp.point, octomath::Quaternion(vp.orientation.w(), vp.orientation.x(), vp.orientation.y(), vp.orientation.z()));
-        vp.infoGain = computeViewpointWorkspaceValue(viewpose, 80.0 * M_PI / 180.0, 8, 6, 5.0);
-        vp.distance = (vp.point - camPos).norm();
-        vp.utility = vp.infoGain - 0.2 * vp.distance;
-        vp.isFree = true;
-        sampledPoints.push_back(vp);// add node to border list
+        viewpoint_candidates.push_back(it.getKey());
       }
     }
+  }
+
+  const size_t MAX_SAMPLES = 30;
+
+  std::vector<octomap::OcTreeKey> selected_viewpoints;
+  sample(viewpoint_candidates.begin(), viewpoint_candidates.end(), std::back_inserter(selected_viewpoints),
+         MAX_SAMPLES, std::mt19937{std::random_device{}()});
+
+  for (const octomap::OcTreeKey &key : selected_viewpoints)
+  {
+    Viewpoint vp;
+    vp.point = testTree.keyToCoord(key);
+    octomath::Vector3 dirVec = computeUnknownDir(key);
+    vp.target = vp.point + dirVec;
+    tf2::Vector3 dirVecTf = tf2::Vector3(dirVec.x(), dirVec.y(), dirVec.z());
+    tf2::Vector3 rotAx = viewDir.cross(dirVecTf);
+    double rotAng = viewDir.angle(dirVecTf);
+    tf2::Quaternion toRot(rotAx, rotAng);
+    vp.orientation = toRot * camQuat;
+    octomap::pose6d viewpose(vp.point, octomath::Quaternion(vp.orientation.w(), vp.orientation.x(), vp.orientation.y(), vp.orientation.z()));
+    vp.infoGain = computeViewpointWorkspaceValue(viewpose, 80.0 * M_PI / 180.0, 8, 6, 5.0);
+    vp.distance = (vp.point - camPos).norm();
+    vp.utility = vp.infoGain - 0.2 * vp.distance;
+    vp.isFree = true;
+    sampledPoints.push_back(vp);// add node to border list
   }
 
   tree_mtx.unlock();
@@ -999,7 +1060,7 @@ int main(int argc, char **argv)
     tf2::fromMsg(camFrameTf.transform.rotation, camQuat);
 
     std::vector<Viewpoint> borderVps = getBorderPoints(box_min, box_max, octomap::point3d(camOrig.x, camOrig.y, camOrig.z), camQuat);
-    publishViewpointVisualizations(borderVps);
+    publishViewpointVisualizations(borderVps, "borderPoints", COLOR_BLUE);
 
     std::vector<octomap::point3d> clusterCenters = testTree.getClusterCenters();
     ROS_INFO_STREAM("ROI count: " << testTree.getRoiSize() << "; Clusters: " << clusterCenters.size());
@@ -1009,16 +1070,29 @@ int main(int argc, char **argv)
       sampleAroundROICenter(clusterCenters[i], 0.5, octomap::point3d(camOrig.x, camOrig.y, camOrig.z), camQuat, i);
     }*/
     std::vector<Viewpoint> roiViewpoints = sampleAroundMultiROICenters(clusterCenters, 0.5, octomap::point3d(camOrig.x, camOrig.y, camOrig.z), camQuat);
-    publishViewpointVisualizations(roiViewpoints);
-
-    std::vector<Viewpoint> &nextViewpoints = borderVps; //roiViewpoints;
+    publishViewpointVisualizations(roiViewpoints, "roiPoints", COLOR_RED);
 
     auto vpComp = [](const Viewpoint &a, const Viewpoint &b)
     {
       //return a.distance > b.distance;
       return a.utility < b.utility;
     };
-    for (std::make_heap(nextViewpoints.begin(), nextViewpoints.end(), vpComp); !nextViewpoints.empty(); std::pop_heap(nextViewpoints.begin(), nextViewpoints.end(), vpComp), nextViewpoints.pop_back())
+
+    std::make_heap(roiViewpoints.begin(), roiViewpoints.end(), vpComp);
+    std::make_heap(borderVps.begin(), borderVps.end(), vpComp);
+
+    std::vector<Viewpoint> &nextViewpoints = [&]() -> std::vector<Viewpoint>& {
+      if (roiViewpoints.size() > 0 && roiViewpoints.front().utility > 0.2)
+      {
+        ROS_INFO_STREAM("Using ROI viewpoint targeting");
+        return roiViewpoints;
+      }
+      ROS_INFO_STREAM("Using exploration viewpoints");
+      return borderVps;
+    }();//borderVps; //roiViewpoints;
+
+
+    for (/*std::make_heap(nextViewpoints.begin(), nextViewpoints.end(), vpComp)*/; !nextViewpoints.empty(); std::pop_heap(nextViewpoints.begin(), nextViewpoints.end(), vpComp), nextViewpoints.pop_back())
     {
       const Viewpoint &vp = nextViewpoints.front();
       if (vp.infoGain > 0)
