@@ -44,6 +44,7 @@
 #include <octomap_vpp/roioctree_utils.h>
 
 #include "sample.h"
+#include "compute_cubes.h"
 
 octomap_vpp::RoiOcTree testTree(0.02);
 octomap_vpp::WorkspaceOcTree *workspaceTree = NULL;
@@ -55,6 +56,7 @@ ros::Publisher pointVisPub;
 ros::Publisher viewArrowVisPub;
 ros::Publisher poseArrayPub;
 ros::Publisher workspaceTreePub;
+ros::Publisher cubeVisPub;
 //ros::Publisher planningScenePub;
 
 boost::mutex tree_mtx;
@@ -343,7 +345,7 @@ std::vector<Viewpoint> sampleAroundMultiROICenters(const std::vector<octomap::po
   std::vector<Viewpoint> sampledPoints;
   if (centers.empty()) return sampledPoints;
   ros::Time samplingStartTime = ros::Time::now();
-  const size_t TOTAL_SAMPLE_TRIES = 200;
+  const size_t TOTAL_SAMPLE_TRIES = 100;
   size_t samples_per_center = TOTAL_SAMPLE_TRIES / centers.size();
   for (const octomap::point3d &center : centers)
   {
@@ -359,6 +361,7 @@ std::vector<Viewpoint> sampleAroundMultiROICenters(const std::vector<octomap::po
 
       testTree.computeRayKeys(center, spherePoint, ray);
       bool view_occluded = false;
+      bool first_roi_passed = false;
       bool has_left_roi = false;
       bool last_node_free = false;
       size_t unknown_nodes = 0;
@@ -368,17 +371,18 @@ std::vector<Viewpoint> sampleAroundMultiROICenters(const std::vector<octomap::po
         if (node == NULL)
         {
           unknown_nodes++;
-          has_left_roi = true;
+          if (first_roi_passed) has_left_roi = true;
           last_node_free = false;
           continue;
         }
         if (!has_left_roi && testTree.isNodeROI(node))
         {
+          first_roi_passed = true;
           continue;
         }
-        has_left_roi = true;
+        if (first_roi_passed) has_left_roi = true;
         double occ = node->getOccupancy();
-        if (occ > 0.6) // View is blocked
+        if (has_left_roi && occ > 0.6) // View is blocked
         {
           view_occluded = true;
           break;
@@ -952,6 +956,7 @@ int main(int argc, char **argv)
   viewArrowVisPub = nh.advertise<visualization_msgs::MarkerArray>("roi_vp_marker", 1);
   poseArrayPub = nh.advertise<geometry_msgs::PoseArray>("vp_array", 1);
   workspaceTreePub = nh.advertise<octomap_msgs::Octomap>("workspace_tree", 1, true);
+  cubeVisPub = nh.advertise<visualization_msgs::Marker>("cube_vis", 1);
 
   // Load workspace if specified
   if (argc > 1)
@@ -1062,13 +1067,27 @@ int main(int argc, char **argv)
     std::vector<Viewpoint> borderVps = getBorderPoints(box_min, box_max, octomap::point3d(camOrig.x, camOrig.y, camOrig.z), camQuat);
     publishViewpointVisualizations(borderVps, "borderPoints", COLOR_BLUE);
 
-    std::vector<octomap::point3d> clusterCenters = testTree.getClusterCenters();
-    ROS_INFO_STREAM("ROI count: " << testTree.getRoiSize() << "; Clusters: " << clusterCenters.size());
+    std::pair<std::vector<octomap::point3d>, std::vector<octomap::point3d>> clusterCentersWithVol = testTree.getClusterCentersWithVolume();
+    std::vector<octomap::point3d> &clusterCenters = clusterCentersWithVol.first;
+    std::vector<octomap::point3d> &clusterVolumes = clusterCentersWithVol.second;
+    //publishCubeVisualization(cubeVisPub, clusterCenters, clusterVolumes);
+    ROS_INFO_STREAM("Found " << clusterCenters.size() << " clusters for " << testTree.getRoiSize() << " ROI cells");
+    for(size_t i = 0; i < clusterCenters.size(); i++)
+    {
+      octomap::point3d &dims = clusterVolumes[i];
+      dims *= 100; // Convert m to cm
+      double vol = dims.x() * dims.y() * dims.z();
+      ROS_INFO_STREAM("Cluster at " << clusterCenters[i] << " with volume " << dims.x() << "*" << dims.y() << "*" << dims.z() << " (" << vol << ") cm3");
+    }
+
+    //std::vector<octomap::point3d> clusterCenters = testTree.getClusterCenters();
+    //ROS_INFO_STREAM("ROI count: " << testTree.getRoiSize() << "; Clusters: " << clusterCenters.size());
     /*for (size_t i = 0; i < clusterCenters.size(); i++)
     {
       ROS_INFO_STREAM("Cluster center: " << clusterCenters[i]);
       sampleAroundROICenter(clusterCenters[i], 0.5, octomap::point3d(camOrig.x, camOrig.y, camOrig.z), camQuat, i);
     }*/
+
     std::vector<Viewpoint> roiViewpoints = sampleAroundMultiROICenters(clusterCenters, 0.5, octomap::point3d(camOrig.x, camOrig.y, camOrig.z), camQuat);
     publishViewpointVisualizations(roiViewpoints, "roiPoints", COLOR_RED);
 
