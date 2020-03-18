@@ -1,4 +1,4 @@
-#include <ros/ros.h>
+﻿#include <ros/ros.h>
 #include <message_filters/subscriber.h>
 #include <message_filters/cache.h>
 #include <message_filters/sync_policies/approximate_time.h>
@@ -708,7 +708,7 @@ double computeViewpointWorkspaceValue(const octomap::pose6d &viewpoint, const do
   return value;
 }
 
-bool hasDirectUnkownNeighbour(const octomap::OcTreeKey &key, unsigned int depth = 0)
+bool hasDirectUnknownNeighbour(const octomap::OcTreeKey &key, unsigned int depth = 0)
 {
   for (int i = 0; i < 6; i++)
   {
@@ -718,6 +718,43 @@ bool hasDirectUnkownNeighbour(const octomap::OcTreeKey &key, unsigned int depth 
     if (node == NULL || node->getLogOdds() == 0) return true;
   }
   return false;
+}
+
+bool hasUnknownNeighbour18(const octomap::OcTreeKey &key, unsigned int depth = 0)
+{
+  for (int i = 0; i < 18; i++)
+  {
+    octomap::OcTreeKey neighbour_key(key[0] + octomap_vpp::nb18Lut[i][0], key[1] + octomap_vpp::nb18Lut[i][1], key[2] + octomap_vpp::nb18Lut[i][2]);
+    octomap_vpp::RoiOcTreeNode *node = testTree.search(neighbour_key, depth);
+    if (node == NULL || node->getLogOdds() == 0) return true;
+  }
+  return false;
+}
+
+bool hasUnknownAndOccupiedNeighbour6(const octomap::OcTreeKey &key, unsigned int depth = 0)
+{
+  bool unknown = false, occupied = false;
+  for (int i = 0; i < 6 && !(unknown && occupied); i++)
+  {
+    octomap::OcTreeKey neighbour_key(key[0] + octomap_vpp::nb6Lut[i][0], key[1] + octomap_vpp::nb6Lut[i][1], key[2] + octomap_vpp::nb6Lut[i][2]);
+    octomap_vpp::RoiOcTreeNode *node = testTree.search(neighbour_key, depth);
+    if (node == NULL || node->getLogOdds() == 0) unknown = true;
+    else if (node->getLogOdds() > 0) occupied = true;
+  }
+  return unknown && occupied;
+}
+
+bool hasUnknownAndOccupiedNeighbour18(const octomap::OcTreeKey &key, unsigned int depth = 0)
+{
+  bool unknown = false, occupied = false;
+  for (int i = 0; i < 18 && !(unknown && occupied); i++)
+  {
+    octomap::OcTreeKey neighbour_key(key[0] + octomap_vpp::nb18Lut[i][0], key[1] + octomap_vpp::nb18Lut[i][1], key[2] + octomap_vpp::nb18Lut[i][2]);
+    octomap_vpp::RoiOcTreeNode *node = testTree.search(neighbour_key, depth);
+    if (node == NULL || node->getLogOdds() == 0) unknown = true;
+    else if (node->getLogOdds() > 0) occupied = true;
+  }
+  return unknown && occupied;
 }
 
 void getBorderPoints(const octomap::point3d &pmin, const octomap::point3d &pmax, unsigned int depth = 0)
@@ -760,7 +797,7 @@ void getBorderPoints(const octomap::point3d &pmin, const octomap::point3d &pmax,
   {
     if (it->getLogOdds() < 0) // is node free; TODO: replace with bounds later
     {
-      if (hasDirectUnkownNeighbour(it.getKey(), depth))
+      if (hasDirectUnknownNeighbour(it.getKey(), depth))
       {
         sampledPoints.push_back(it.getCoordinate());// add node to border list
       }
@@ -813,6 +850,52 @@ octomap::point3d computeUnknownDir(const octomap::OcTreeKey &key)
   return averageUnknownDir;
 }
 
+std::vector<octomap::point3d> getOccUnkownBorderPoints()
+{
+  std::vector<octomap::point3d> candidate_points;
+  for (auto it = testTree.begin_leafs(), end = testTree.end_leafs(); it != end; it++)
+  {
+    if (it->getLogOdds() < 0) // is node free; TODO: replace with bounds later
+    {
+      if (hasUnknownAndOccupiedNeighbour6(it.getKey()))
+      {
+        candidate_points.push_back(it.getCoordinate());
+      }
+    }
+  }
+
+  visualization_msgs::Marker marker;
+  marker.header.frame_id = "world";
+  marker.header.stamp = ros::Time();
+  marker.ns = "borderPoints";
+  marker.id = 0;
+  marker.type = visualization_msgs::Marker::POINTS;
+  marker.action = visualization_msgs::Marker::ADD;
+  marker.pose.position.x = 0;
+  marker.pose.position.y = 0;
+  marker.pose.position.z = 0;
+  marker.pose.orientation.x = 0.0;
+  marker.pose.orientation.y = 0.0;
+  marker.pose.orientation.z = 0.0;
+  marker.pose.orientation.w = 1.0;
+  marker.scale.x = 0.01;
+  marker.scale.y = 0.01;
+  marker.scale.z = 0.01;
+  marker.color.a = 1.0;
+  marker.color.r = 0.0;
+  marker.color.g = 1.0;
+  marker.color.b = 0.0;
+  for (const octomap::point3d &point : candidate_points)
+  {
+    marker.points.push_back(octomap::pointOctomapToMsg(point));
+  }
+  pointVisPub.publish(marker);
+
+  ROS_INFO_STREAM("Border point count: " << candidate_points.size());
+
+  return candidate_points;
+}
+
 std::vector<Viewpoint> getBorderPoints(const octomap::point3d &pmin, const octomap::point3d &pmax, const octomap::point3d &camPos, const tf2::Quaternion &camQuat)
 {
   tf2::Matrix3x3 camMat(camQuat);
@@ -831,7 +914,7 @@ std::vector<Viewpoint> getBorderPoints(const octomap::point3d &pmin, const octom
     }
     if (it->getLogOdds() < 0) // is node free; TODO: replace with bounds later
     {
-      if (hasDirectUnkownNeighbour(it.getKey()))
+      if (hasDirectUnknownNeighbour(it.getKey()))
       {
         viewpoint_candidates.push_back(it.getKey());
       }
@@ -1061,10 +1144,12 @@ int main(int argc, char **argv)
     octomap::point3d box_max(camOrig.x + 0.2, camOrig.y + 0.2, camOrig.z + 0.2);
     //getBorderPoints(box_min, box_max);
 
+    getOccUnkownBorderPoints();
+
     tf2::Quaternion camQuat;
     tf2::fromMsg(camFrameTf.transform.rotation, camQuat);
 
-    std::vector<Viewpoint> borderVps = getBorderPoints(box_min, box_max, octomap::point3d(camOrig.x, camOrig.y, camOrig.z), camQuat);
+    std::vector<Viewpoint> borderVps;// = getBorderPoints(box_min, box_max, octomap::point3d(camOrig.x, camOrig.y, camOrig.z), camQuat);
     publishViewpointVisualizations(borderVps, "borderPoints", COLOR_BLUE);
 
     std::pair<std::vector<octomap::point3d>, std::vector<octomap::point3d>> clusterCentersWithVol = testTree.getClusterCentersWithVolume();
@@ -1077,7 +1162,10 @@ int main(int argc, char **argv)
       octomap::point3d &dims = clusterVolumes[i];
       dims *= 100; // Convert m to cm
       double vol = dims.x() * dims.y() * dims.z();
-      ROS_INFO_STREAM("Cluster at " << clusterCenters[i] << " with volume " << dims.x() << "*" << dims.y() << "*" << dims.z() << " (" << vol << ") cm3");
+      const octomap::point3d BBX_DIFF(0.2, 0.2, 0.2);
+      double disRatio = testTree.getDiscoveredRatio(clusterCenters[i] - BBX_DIFF, clusterCenters[i] + BBX_DIFF);
+      ROS_INFO_STREAM("Cluster at " << clusterCenters[i] << " with volume " << dims.x() << "*" << dims.y() << "*" << dims.z() << " (" << vol << ") cm3; "
+                      << "DisRatio: " << disRatio);
     }
 
     //std::vector<octomap::point3d> clusterCenters = testTree.getClusterCenters();
@@ -1088,7 +1176,7 @@ int main(int argc, char **argv)
       sampleAroundROICenter(clusterCenters[i], 0.5, octomap::point3d(camOrig.x, camOrig.y, camOrig.z), camQuat, i);
     }*/
 
-    std::vector<Viewpoint> roiViewpoints = sampleAroundMultiROICenters(clusterCenters, 0.5, octomap::point3d(camOrig.x, camOrig.y, camOrig.z), camQuat);
+    std::vector<Viewpoint> roiViewpoints;// = sampleAroundMultiROICenters(clusterCenters, 0.5, octomap::point3d(camOrig.x, camOrig.y, camOrig.z), camQuat);
     publishViewpointVisualizations(roiViewpoints, "roiPoints", COLOR_RED);
 
     auto vpComp = [](const Viewpoint &a, const Viewpoint &b)
