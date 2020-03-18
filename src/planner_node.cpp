@@ -55,6 +55,7 @@ namespace std {
 
 octomap_vpp::RoiOcTree testTree(0.02);
 octomap_vpp::WorkspaceOcTree *workspaceTree = NULL;
+octomap::point3d wsMin(-FLT_MAX, -FLT_MAX, -FLT_MAX), wsMax(FLT_MAX, FLT_MAX, FLT_MAX);
 tf2_ros::Buffer tfBuffer(ros::Duration(30));
 ros::Publisher octomapPub;
 ros::Publisher inflatedOctomapPub;
@@ -344,6 +345,23 @@ struct Viewpoint
   bool isFree;
 };
 
+/**
+ * @brief dirVecToQuat computes quaternion closest to camQuat with x-axis aligned to dirVec
+ * @param dirVec desired x-axis direction
+ * @param camQuat camera orientation
+ * @param viewDir camera view direction (x-axis)
+ * @return computed quaternion
+ */
+tf2::Quaternion dirVecToQuat(octomath::Vector3 dirVec, const tf2::Quaternion &camQuat, const tf2::Vector3 &viewDir)
+{
+  tf2::Vector3 dirVecTf = tf2::Vector3(dirVec.x(), dirVec.y(), dirVec.z());
+  tf2::Vector3 rotAx = viewDir.cross(dirVecTf);
+  double rotAng = viewDir.angle(dirVecTf);
+  tf2::Quaternion toRot(rotAx, rotAng);
+  tf2::Quaternion viewQuat = toRot * camQuat;
+  return viewQuat;
+}
+
 std::vector<Viewpoint> sampleAroundMultiROICenters(const std::vector<octomap::point3d> &centers, const double &dist, const octomap::point3d &camPos, const tf2::Quaternion &camQuat)
 {
   tf2::Matrix3x3 camMat(camQuat);
@@ -408,11 +426,7 @@ std::vector<Viewpoint> sampleAroundMultiROICenters(const std::vector<octomap::po
       {
         octomath::Vector3 dirVec = center - spherePoint;
         dirVec.normalize();
-        tf2::Vector3 dirVecTf = tf2::Vector3(dirVec.x(), dirVec.y(), dirVec.z());
-        tf2::Vector3 rotAx = viewDir.cross(dirVecTf);
-        double rotAng = viewDir.angle(dirVecTf);
-        tf2::Quaternion toRot(rotAx, rotAng);
-        tf2::Quaternion viewQuat = toRot * camQuat;
+        tf2::Quaternion viewQuat = dirVecToQuat(dirVec, camQuat, viewDir);
 
         Viewpoint vp;
         vp.point = spherePoint;
@@ -566,16 +580,13 @@ void sampleAroundROICenter(const octomap::point3d &center, const double &dist,  
     {
       octomath::Vector3 dirVec = center - spherePoint;
       dirVec.normalize();
-      tf2::Vector3 dirVecTf = tf2::Vector3(dirVec.x(), dirVec.y(), dirVec.z());
+
       sampledPoints.push_back(spherePoint);
       infoGain.push_back(unknown_nodes);
       distances.push_back((spherePoint - camPos).norm());
       vpIsFree.push_back(last_node_free);
 
-      tf2::Vector3 rotAx = viewDir.cross(dirVecTf);
-      double rotAng = viewDir.angle(dirVecTf);
-      tf2::Quaternion toRot(rotAx, rotAng);
-      tf2::Quaternion viewQuat = toRot * camQuat;
+      tf2::Quaternion viewQuat = dirVecToQuat(dirVec, camQuat, viewDir);
       vpOrientations.push_back(viewQuat);
     }
   }
@@ -841,6 +852,22 @@ void getBorderPoints(const octomap::point3d &pmin, const octomap::point3d &pmax,
   pointVisPub.publish( marker );
 }
 
+octomap::point3d computeSurfaceNormalDir(const octomap::OcTreeKey &key)
+{
+  octomap::point3d normalDir;
+  for (size_t i = 0; i < 18; i++)
+  {
+    octomap::OcTreeKey neighbour_key(key[0] + octomap_vpp::nb18Lut[i][0], key[1] + octomap_vpp::nb18Lut[i][1], key[2] + octomap_vpp::nb18Lut[i][2]);
+    octomap_vpp::RoiOcTreeNode *node = testTree.search(neighbour_key);
+    if (node != NULL && node->getLogOdds() > 0) // occupied
+    {
+      normalDir -= octomap::point3d(octomap_vpp::nb18Lut[i][0], octomap_vpp::nb18Lut[i][1], octomap_vpp::nb18Lut[i][2]);
+    }
+  }
+  normalDir.normalize();
+  return normalDir;
+}
+
 octomap::point3d computeUnknownDir(const octomap::OcTreeKey &key)
 {
   octomap::point3d averageUnknownDir;
@@ -857,18 +884,57 @@ octomap::point3d computeUnknownDir(const octomap::OcTreeKey &key)
   return averageUnknownDir;
 }
 
-std::vector<octomap::point3d> getOccUnkownBorderPoints()
+std::vector<Viewpoint> getOccUnkownBorderPoints(const double &dist, const octomap::point3d &camPos, const tf2::Quaternion &camQuat)
 {
-  std::vector<octomap::point3d> candidate_points;
-  for (auto it = testTree.begin_leafs(), end = testTree.end_leafs(); it != end; it++)
+  tf2::Matrix3x3 camMat(camQuat);
+  tf2::Vector3 viewDir = camMat.getColumn(0);
+  std::vector<octomap::OcTreeKey> contourKeys;
+  std::vector<Viewpoint> sampled_vps;
+  for (auto it = testTree.begin_leafs_bbx(wsMin, wsMax), end = testTree.end_leafs_bbx(); it != end; it++)
   {
+    if (workspaceTree != NULL && workspaceTree->search(it.getKey()) == NULL) // workspace specified and sampled point not in workspace
+    {
+      continue;
+    }
     if (it->getLogOdds() < 0) // is node free; TODO: replace with bounds later
     {
       if (hasUnknownAndOccupiedNeighbour6(it.getKey()))
       {
-        candidate_points.push_back(it.getCoordinate());
+        contourKeys.push_back(it.getKey());
       }
     }
+  }
+
+  const size_t MAX_SAMPLES = 30;
+
+  std::vector<octomap::OcTreeKey> selected_keys;
+  std::sample(contourKeys.begin(), contourKeys.end(), std::back_inserter(selected_keys),
+         MAX_SAMPLES, std::mt19937{std::random_device{}()});
+
+  for (const octomap::OcTreeKey &key : selected_keys)
+  {
+    octomath::Vector3 normalDir = computeSurfaceNormalDir(key);
+    octomap::point3d contourPoint = testTree.keyToCoord(key);
+    octomap::point3d vpOrig = contourPoint + normalDir * dist;
+    if (workspaceTree != NULL && workspaceTree->search(vpOrig) == NULL) // workspace specified and sampled point not in workspace
+    {
+      continue;
+    }
+    octomap_vpp::RoiOcTreeNode *node = testTree.search(vpOrig);
+    if (node != NULL && node->getLogOdds() > 0) // Node is occupied
+    {
+      continue;
+    }
+    Viewpoint vp;
+    vp.point = vpOrig;
+    vp.target = contourPoint;
+    vp.orientation = dirVecToQuat(-normalDir, camQuat, viewDir);
+    octomap::pose6d viewpose(vp.point, octomath::Quaternion(vp.orientation.w(), vp.orientation.x(), vp.orientation.y(), vp.orientation.z()));
+    vp.infoGain = computeViewpointWorkspaceValue(viewpose, 80.0 * M_PI / 180.0, 8, 6, 5.0);
+    vp.distance = (vp.point - camPos).norm();
+    vp.utility = vp.infoGain - 0.2 * vp.distance;
+    vp.isFree = true;
+    sampled_vps.push_back(vp);
   }
 
   visualization_msgs::Marker marker;
@@ -892,15 +958,15 @@ std::vector<octomap::point3d> getOccUnkownBorderPoints()
   marker.color.r = 0.0;
   marker.color.g = 1.0;
   marker.color.b = 0.0;
-  for (const octomap::point3d &point : candidate_points)
+  for (const octomap::OcTreeKey &key : contourKeys)
   {
-    marker.points.push_back(octomap::pointOctomapToMsg(point));
+    marker.points.push_back(octomap::pointOctomapToMsg(testTree.keyToCoord(key)));
   }
   pointVisPub.publish(marker);
 
-  ROS_INFO_STREAM("Border point count: " << candidate_points.size());
+  ROS_INFO_STREAM("Border point count: " << contourKeys.size());
 
-  return candidate_points;
+  return sampled_vps;
 }
 
 std::vector<Viewpoint> getBorderPoints(const octomap::point3d &pmin, const octomap::point3d &pmax, const octomap::point3d &camPos, const tf2::Quaternion &camQuat)
@@ -940,11 +1006,7 @@ std::vector<Viewpoint> getBorderPoints(const octomap::point3d &pmin, const octom
     vp.point = testTree.keyToCoord(key);
     octomath::Vector3 dirVec = computeUnknownDir(key);
     vp.target = vp.point + dirVec;
-    tf2::Vector3 dirVecTf = tf2::Vector3(dirVec.x(), dirVec.y(), dirVec.z());
-    tf2::Vector3 rotAx = viewDir.cross(dirVecTf);
-    double rotAng = viewDir.angle(dirVecTf);
-    tf2::Quaternion toRot(rotAx, rotAng);
-    vp.orientation = toRot * camQuat;
+    vp.orientation = dirVecToQuat(dirVec, camQuat, viewDir);
     octomap::pose6d viewpose(vp.point, octomath::Quaternion(vp.orientation.w(), vp.orientation.x(), vp.orientation.y(), vp.orientation.z()));
     vp.infoGain = computeViewpointWorkspaceValue(viewpose, 80.0 * M_PI / 180.0, 8, 6, 5.0);
     vp.distance = (vp.point - camPos).norm();
@@ -1069,6 +1131,19 @@ int main(int argc, char **argv)
       return -2;
     }
 
+    wsMin = octomap::point3d(FLT_MAX, FLT_MAX, FLT_MAX);
+    wsMax = octomap::point3d(-FLT_MAX, -FLT_MAX, -FLT_MAX);
+    for (auto it = workspaceTree->begin_leafs(), end = workspaceTree->end_leafs(); it != end; it++)
+    {
+      octomap::point3d coord = it.getCoordinate();
+      if (coord.x() < wsMin.x()) wsMin.x() = coord.x();
+      if (coord.y() < wsMin.y()) wsMin.y() = coord.y();
+      if (coord.z() < wsMin.z()) wsMin.z() = coord.z();
+      if (coord.x() > wsMax.x()) wsMax.x() = coord.x();
+      if (coord.y() > wsMax.y()) wsMax.y() = coord.y();
+      if (coord.z() > wsMax.z()) wsMax.z() = coord.z();
+    }
+
     octomap_msgs::Octomap ws_msg;
     ws_msg.header.frame_id = "world";
     ws_msg.header.stamp = ros::Time::now();
@@ -1102,6 +1177,25 @@ int main(int argc, char **argv)
   ros::Subscriber roiSub = nh.subscribe("/pointcloud_roi", 1, registerRoiPCL);
 
   moveit::planning_interface::MoveGroupInterface manipulator_group("manipulator");
+  if (workspaceTree)
+  {
+    manipulator_group.setWorkspace(wsMin.x(), wsMin.y(), wsMin.z(), wsMax.x(), wsMax.y(), wsMax.z());
+
+    visualization_msgs::Marker ws_cube;
+    ws_cube.header.frame_id = "world";
+    ws_cube.header.stamp = ros::Time::now();
+    ws_cube.ns = "ws_cube";
+    ws_cube.id = 0;
+    ws_cube.type = visualization_msgs::Marker::LINE_LIST;
+    ws_cube.color.a = 1.0;
+    ws_cube.color.r = 1.0;
+    ws_cube.color.g = 0.0;
+    ws_cube.color.b = 0.0;
+    ws_cube.scale.x = 0.002;
+    addCubeEdges(wsMin, wsMax, ws_cube.points);
+
+    cubeVisPub.publish(ws_cube);
+  }
 
   robot_model_loader::RobotModelLoader robot_model_loader("robot_description");
   robot_model::RobotModelPtr kinematic_model = robot_model_loader.getModel();
@@ -1151,10 +1245,11 @@ int main(int argc, char **argv)
     octomap::point3d box_max(camOrig.x + 0.2, camOrig.y + 0.2, camOrig.z + 0.2);
     //getBorderPoints(box_min, box_max);
 
-    getOccUnkownBorderPoints();
-
     tf2::Quaternion camQuat;
     tf2::fromMsg(camFrameTf.transform.rotation, camQuat);
+
+    std::vector<Viewpoint> contourVps = getOccUnkownBorderPoints(0.5, octomap::point3d(camOrig.x, camOrig.y, camOrig.z), camQuat);
+    publishViewpointVisualizations(contourVps, "contourPoints", COLOR_GREEN);
 
     std::vector<Viewpoint> borderVps;// = getBorderPoints(box_min, box_max, octomap::point3d(camOrig.x, camOrig.y, camOrig.z), camQuat);
     publishViewpointVisualizations(borderVps, "borderPoints", COLOR_BLUE);
