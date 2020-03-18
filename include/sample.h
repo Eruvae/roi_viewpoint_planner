@@ -1,4 +1,5 @@
-#ifndef SAMPLE_H
+// File not needed anymore, will be deleted
+/*#ifndef SAMPLE_H
 #define SAMPLE_H
 
 #include <algorithm>
@@ -106,4 +107,4 @@ _SampleIterator sample(_PopulationIterator __first, _PopulationIterator __last, 
   return __sample(__first, __last, __pop_cat{}, __out, __samp_cat{}, __d, std::forward<_UniformRandomBitGenerator>(__g));
 }
 
-#endif // SAMPLE_H
+#endif // SAMPLE_H*/

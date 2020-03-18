@@ -33,6 +33,13 @@
 #include <vector>
 #include <algorithm>
 
+#if defined(__GNUC__ ) && (__GNUC__  < 7) // GCC < 7 has sample only in experimental namespace
+#include <experimental/algorithm>
+namespace std {
+  using experimental::sample;
+}
+#endif
+
 #include <visualization_msgs/Marker.h>
 #include <visualization_msgs/MarkerArray.h>
 
@@ -43,7 +50,7 @@
 #include <octomap_vpp/WorkspaceOcTree.h>
 #include <octomap_vpp/roioctree_utils.h>
 
-#include "sample.h"
+//#include "sample.h"
 #include "compute_cubes.h"
 
 octomap_vpp::RoiOcTree testTree(0.02);
@@ -924,7 +931,7 @@ std::vector<Viewpoint> getBorderPoints(const octomap::point3d &pmin, const octom
   const size_t MAX_SAMPLES = 30;
 
   std::vector<octomap::OcTreeKey> selected_viewpoints;
-  sample(viewpoint_candidates.begin(), viewpoint_candidates.end(), std::back_inserter(selected_viewpoints),
+  std::sample(viewpoint_candidates.begin(), viewpoint_candidates.end(), std::back_inserter(selected_viewpoints),
          MAX_SAMPLES, std::mt19937{std::random_device{}()});
 
   for (const octomap::OcTreeKey &key : selected_viewpoints)
