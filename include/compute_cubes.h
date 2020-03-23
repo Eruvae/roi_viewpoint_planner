@@ -7,7 +7,7 @@
 #include <octomap/octomap_types.h>
 #include <octomap_ros/conversions.h>
 
-void addEdgesFromCorner(const geometry_msgs::Point &corner, const geometry_msgs::Point &opp, std::vector<geometry_msgs::Point> &list)
+static inline void addEdgesFromCorner(const geometry_msgs::Point &corner, const geometry_msgs::Point &opp, std::vector<geometry_msgs::Point> &list)
 {
   geometry_msgs::Point p = corner;
   list.push_back(p);
@@ -23,7 +23,7 @@ void addEdgesFromCorner(const geometry_msgs::Point &corner, const geometry_msgs:
   list.push_back(p);
 }
 
-void swapCoords(geometry_msgs::Point &p1, geometry_msgs::Point &p2, size_t dim)
+static inline void swapCoords(geometry_msgs::Point &p1, geometry_msgs::Point &p2, size_t dim)
 {
   if (dim == 0)
     std::swap(p1.x, p2.x);
@@ -34,7 +34,7 @@ void swapCoords(geometry_msgs::Point &p1, geometry_msgs::Point &p2, size_t dim)
 }
 
 
-void addCubeEdges(const octomap::point3d &min, const octomap::point3d &max, std::vector<geometry_msgs::Point> &list)
+static inline void addCubeEdges(const octomap::point3d &min, const octomap::point3d &max, std::vector<geometry_msgs::Point> &list)
 {
   geometry_msgs::Point corner = octomap::pointOctomapToMsg(min);
   geometry_msgs::Point opp = octomap::pointOctomapToMsg(max);
@@ -52,7 +52,7 @@ void addCubeEdges(const octomap::point3d &min, const octomap::point3d &max, std:
   }
 }
 
-void publishCubeVisualization(ros::Publisher &pub, const std::vector<octomap::point3d> &centers, const std::vector<octomap::point3d> &volumes)
+static inline void publishCubeVisualization(ros::Publisher &pub, const std::vector<octomap::point3d> &centers, const std::vector<octomap::point3d> &volumes)
 {
   visualization_msgs::Marker cube_msg;
   cube_msg.header.frame_id = "world";

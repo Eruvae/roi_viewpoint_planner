@@ -149,7 +149,7 @@ include_directories(
 ## With catkin_make all packages are built within a single CMake context
 ## The recommended prefix ensures that target names across packages don't collide
 # add_executable(${PROJECT_NAME}_node src/octomap_vpp_node.cpp)
-add_executable(planner_node src/planner_node.cpp)
+add_executable(planner_node src/planner_node.cpp src/viewpoint_planner.cpp)
 
 ## Rename C++ executable without prefix
 ## The above recommended prefix causes long target names, the following renames the
