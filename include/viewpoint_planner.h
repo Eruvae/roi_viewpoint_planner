@@ -114,6 +114,18 @@ private:
 
 public:
 
+  enum PlannerMode
+  {
+    IDLE = 0,
+    SAMPLE_AUTOMATIC = 1,
+    SAMPLE_ROI = 2,
+    SAMPLE_CONTOURS = 3,
+    SAMPLE_BORDER = 4,
+    NUM_MODES = 5 // Should be kept as last element if new modes are added
+  } mode;
+
+  bool execute_plan;
+
   struct Viewpoint
   {
     octomap::point3d point;

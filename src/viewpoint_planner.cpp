@@ -12,7 +12,9 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, int argc, char **argv) :
   robot_model_loader("robot_description"),
   kinematic_model(robot_model_loader.getModel()),
   joint_model_group(kinematic_model->getJointModelGroup("manipulator")),
-  kinematic_state(new robot_state::RobotState(kinematic_model))
+  kinematic_state(new robot_state::RobotState(kinematic_model)),
+  mode(IDLE),
+  execute_plan(false)
 {
   octomapPub = nh.advertise<octomap_msgs::Octomap>("octomap", 1);
   inflatedOctomapPub = nh.advertise<octomap_msgs::Octomap>("inflated_octomap", 1);
@@ -1109,6 +1111,9 @@ void ViewpointPlanner::plannerLoop()
 
     publishMap();
 
+    if (mode == IDLE)
+      continue;
+
     /*tree_mtx.lock();
     ros::Time vpEvalStart = ros::Time::now();
     double value = testTree.computeViewpointValue(viewpoint, 80.0 * M_PI / 180.0, 8, 6, 5.0);
@@ -1143,11 +1148,26 @@ void ViewpointPlanner::plannerLoop()
     tf2::Quaternion camQuat;
     tf2::fromMsg(camFrameTf.transform.rotation, camQuat);
 
-    std::vector<Viewpoint> contourVps = getOccUnkownBorderPoints(0.5, octomap::point3d(camOrig.x, camOrig.y, camOrig.z), camQuat);
-    publishViewpointVisualizations(contourVps, "contourPoints", COLOR_GREEN);
+    std::vector<Viewpoint> contourVps, borderVps, roiViewpoints;
+    auto vpComp = [](const Viewpoint &a, const Viewpoint &b)
+    {
+      //return a.distance > b.distance;
+      return a.utility < b.utility;
+    };
 
-    std::vector<Viewpoint> borderVps;// = getBorderPoints(box_min, box_max, octomap::point3d(camOrig.x, camOrig.y, camOrig.z), camQuat);
-    publishViewpointVisualizations(borderVps, "borderPoints", COLOR_BLUE);
+    if (mode == SAMPLE_CONTOURS || mode == SAMPLE_AUTOMATIC)
+    {
+      contourVps = getOccUnkownBorderPoints(0.5, octomap::point3d(camOrig.x, camOrig.y, camOrig.z), camQuat);
+      std::make_heap(contourVps.begin(), contourVps.end(), vpComp);
+      publishViewpointVisualizations(contourVps, "contourPoints", COLOR_GREEN);
+    }
+
+    if (mode == SAMPLE_BORDER /*|| mode == SAMPLE_AUTOMATIC*/)
+    {
+      borderVps = getBorderPoints(box_min, box_max, octomap::point3d(camOrig.x, camOrig.y, camOrig.z), camQuat);
+      std::make_heap(borderVps.begin(), borderVps.end(), vpComp);
+      publishViewpointVisualizations(borderVps, "borderPoints", COLOR_BLUE);
+    }
 
     std::pair<std::vector<octomap::point3d>, std::vector<octomap::point3d>> clusterCentersWithVol = planningTree.getClusterCentersWithVolume();
     std::vector<octomap::point3d> &clusterCenters = clusterCentersWithVol.first;
@@ -1173,29 +1193,34 @@ void ViewpointPlanner::plannerLoop()
       sampleAroundROICenter(clusterCenters[i], 0.5, octomap::point3d(camOrig.x, camOrig.y, camOrig.z), camQuat, i);
     }*/
 
-    std::vector<Viewpoint> roiViewpoints = sampleAroundMultiROICenters(clusterCenters, 0.5, octomap::point3d(camOrig.x, camOrig.y, camOrig.z), camQuat);
-    publishViewpointVisualizations(roiViewpoints, "roiPoints", COLOR_RED);
-
-    auto vpComp = [](const Viewpoint &a, const Viewpoint &b)
+    if (mode == SAMPLE_ROI || mode == SAMPLE_AUTOMATIC)
     {
-      //return a.distance > b.distance;
-      return a.utility < b.utility;
-    };
+      std::vector<Viewpoint> roiViewpoints = sampleAroundMultiROICenters(clusterCenters, 0.5, octomap::point3d(camOrig.x, camOrig.y, camOrig.z), camQuat);
+      std::make_heap(roiViewpoints.begin(), roiViewpoints.end(), vpComp);
+      publishViewpointVisualizations(roiViewpoints, "roiPoints", COLOR_RED);
+    }
 
-    std::make_heap(roiViewpoints.begin(), roiViewpoints.end(), vpComp);
+    //std::make_heap(roiViewpoints.begin(), roiViewpoints.end(), vpComp);
     //std::make_heap(borderVps.begin(), borderVps.end(), vpComp);
-    std::make_heap(contourVps.begin(), contourVps.end(), vpComp);
+    //std::make_heap(contourVps.begin(), contourVps.end(), vpComp);
 
-    std::vector<Viewpoint> &nextViewpoints = [&]() -> std::vector<Viewpoint>& {
+    if (!execute_plan)
+      continue;
+
+    std::vector<Viewpoint> &nextViewpoints = [&]() -> std::vector<Viewpoint>&
+    {
+      if (mode == SAMPLE_ROI) return roiViewpoints;
+      else if (mode == SAMPLE_CONTOURS) return contourVps;
+      else if (mode == SAMPLE_BORDER) return borderVps;
+
       if (roiViewpoints.size() > 0 && roiViewpoints.front().utility > 0.2)
       {
         ROS_INFO_STREAM("Using ROI viewpoint targeting");
         return roiViewpoints;
       }
       ROS_INFO_STREAM("Using exploration viewpoints");
-      return contourVps; //borderVps;
-    }();//borderVps; //roiViewpoints;
-
+      return contourVps;
+    }();
 
     for (/*std::make_heap(nextViewpoints.begin(), nextViewpoints.end(), vpComp)*/; !nextViewpoints.empty(); std::pop_heap(nextViewpoints.begin(), nextViewpoints.end(), vpComp), nextViewpoints.pop_back())
     {
