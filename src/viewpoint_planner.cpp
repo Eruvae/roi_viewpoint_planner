@@ -968,6 +968,106 @@ std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::getOccUnkownBorderPoi
   return sampled_vps;
 }
 
+void ViewpointPlanner::getFreeNeighbours6(const octomap::OcTreeKey &key, octomap::KeySet &freeKeys)
+{
+  for (int i = 0; i < 6; i++)
+  {
+    octomap::OcTreeKey neighbour_key(key[0] + octomap_vpp::nb6Lut[i][0], key[1] + octomap_vpp::nb6Lut[i][1], key[2] + octomap_vpp::nb6Lut[i][2]);
+    octomap_vpp::RoiOcTreeNode *node = planningTree.search(neighbour_key);
+    if (node != NULL && node->getLogOdds() < 0) freeKeys.insert(neighbour_key);
+  }
+}
+
+std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleRoiContourPoints(const double &dist, const octomap::point3d &camPos, const tf2::Quaternion &camQuat)
+{
+  octomap::KeySet roi = planningTree.getRoiKeys();
+  octomap::KeySet freeNeighbours;
+  for (const octomap::OcTreeKey &key : roi)
+  {
+    getFreeNeighbours6(key, freeNeighbours);
+  }
+  std::vector<octomap::point3d> selectedPoints;
+  for (const octomap::OcTreeKey &key : freeNeighbours)
+  {
+    if (hasDirectUnknownNeighbour(key))
+    {
+      selectedPoints.push_back(planningTree.keyToCoord(key));
+    }
+  }
+
+  ROS_INFO_STREAM("Number of ROI contour points: " << selectedPoints.size());
+
+  tf2::Matrix3x3 camMat(camQuat);
+  tf2::Vector3 viewDir = camMat.getColumn(0);
+  std::vector<Viewpoint> sampledPoints;
+
+  if (selectedPoints.size() == 0)
+    return sampledPoints;
+
+  const size_t TOTAL_SAMPLE_TRIES = 100;
+
+  std::default_random_engine generator;
+  std::uniform_int_distribution<int> distribution(0, selectedPoints.size());
+  for (size_t i = 0; i < TOTAL_SAMPLE_TRIES; i++)
+  {
+    octomap::point3d target = selectedPoints[distribution(generator)];
+    octomap::KeyRay ray;
+    octomap::point3d spherePoint = sampleRandomPointOnSphere(target, dist);
+
+    if (workspaceTree != NULL && workspaceTree->search(spherePoint) == NULL) // workspace specified and sampled point not in workspace
+    {
+      continue;
+    }
+
+    planningTree.computeRayKeys(target, spherePoint, ray);
+    bool view_occluded = false;
+    bool last_node_free = false;
+    size_t unknown_nodes = 0;
+    for (const octomap::OcTreeKey &key : ray)
+    {
+      octomap_vpp::RoiOcTreeNode *node = planningTree.search(key);
+      if (node == NULL)
+      {
+        unknown_nodes++;
+        last_node_free = false;
+        continue;
+      }
+      double occ = node->getOccupancy();
+      if (occ > 0.6) // View is blocked
+      {
+        view_occluded = true;
+        break;
+      }
+      else if (occ > 0.4) // unknown
+      {
+        unknown_nodes++;
+        last_node_free = false;
+      }
+      else //free
+      {
+        last_node_free = true;
+      }
+    }
+    if (!view_occluded)
+    {
+      octomath::Vector3 dirVec = target - spherePoint;
+      dirVec.normalize();
+      tf2::Quaternion viewQuat = dirVecToQuat(dirVec, camQuat, viewDir);
+
+      Viewpoint vp;
+      vp.point = spherePoint;
+      vp.target = target;
+      vp.orientation = viewQuat;
+      vp.infoGain = (double)unknown_nodes / (double)ray.size();
+      vp.distance = (spherePoint - camPos).norm();
+      vp.utility = vp.infoGain - 0.2 * vp.distance;
+      vp.isFree = last_node_free;
+      sampledPoints.push_back(vp);
+    }
+  }
+  return sampledPoints;
+}
+
 std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::getBorderPoints(const octomap::point3d &pmin, const octomap::point3d &pmax, const octomap::point3d &camPos, const tf2::Quaternion &camQuat)
 {
   tf2::Matrix3x3 camMat(camQuat);
@@ -1148,7 +1248,7 @@ void ViewpointPlanner::plannerLoop()
     tf2::Quaternion camQuat;
     tf2::fromMsg(camFrameTf.transform.rotation, camQuat);
 
-    std::vector<Viewpoint> contourVps, borderVps, roiViewpoints;
+    std::vector<Viewpoint> contourVps, borderVps, roiContourVps, roiCenterVps;
     auto vpComp = [](const Viewpoint &a, const Viewpoint &b)
     {
       //return a.distance > b.distance;
@@ -1167,6 +1267,13 @@ void ViewpointPlanner::plannerLoop()
       borderVps = getBorderPoints(box_min, box_max, octomap::point3d(camOrig.x, camOrig.y, camOrig.z), camQuat);
       std::make_heap(borderVps.begin(), borderVps.end(), vpComp);
       publishViewpointVisualizations(borderVps, "borderPoints", COLOR_BLUE);
+    }
+
+    if (mode == SAMPLE_ROI_CONTOURS)
+    {
+      roiContourVps = sampleRoiContourPoints(0.5, octomap::point3d(camOrig.x, camOrig.y, camOrig.z), camQuat);
+      std::make_heap(roiContourVps.begin(), roiContourVps.end(), vpComp);
+      publishViewpointVisualizations(roiContourVps, "roiContourPoints", COLOR_RED);
     }
 
     std::pair<std::vector<octomap::point3d>, std::vector<octomap::point3d>> clusterCentersWithVol = planningTree.getClusterCentersWithVolume();
@@ -1193,7 +1300,7 @@ void ViewpointPlanner::plannerLoop()
       sampleAroundROICenter(clusterCenters[i], 0.5, octomap::point3d(camOrig.x, camOrig.y, camOrig.z), camQuat, i);
     }*/
 
-    if (mode == SAMPLE_ROI || mode == SAMPLE_AUTOMATIC)
+    if (mode == SAMPLE_ROI_CENTERS || mode == SAMPLE_AUTOMATIC)
     {
       std::vector<Viewpoint> roiViewpoints = sampleAroundMultiROICenters(clusterCenters, 0.5, octomap::point3d(camOrig.x, camOrig.y, camOrig.z), camQuat);
       std::make_heap(roiViewpoints.begin(), roiViewpoints.end(), vpComp);
@@ -1209,14 +1316,15 @@ void ViewpointPlanner::plannerLoop()
 
     std::vector<Viewpoint> &nextViewpoints = [&]() -> std::vector<Viewpoint>&
     {
-      if (mode == SAMPLE_ROI) return roiViewpoints;
+      if (mode == SAMPLE_ROI_CENTERS) return roiCenterVps;
+      else if (mode == SAMPLE_ROI_CONTOURS) return roiContourVps;
       else if (mode == SAMPLE_CONTOURS) return contourVps;
       else if (mode == SAMPLE_BORDER) return borderVps;
 
-      if (roiViewpoints.size() > 0 && roiViewpoints.front().utility > 0.2)
+      if (roiCenterVps.size() > 0 && roiCenterVps.front().utility > 0.2)
       {
         ROS_INFO_STREAM("Using ROI viewpoint targeting");
-        return roiViewpoints;
+        return roiCenterVps;
       }
       ROS_INFO_STREAM("Using exploration viewpoints");
       return contourVps;

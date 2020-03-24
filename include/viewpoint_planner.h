@@ -118,10 +118,11 @@ public:
   {
     IDLE = 0,
     SAMPLE_AUTOMATIC = 1,
-    SAMPLE_ROI = 2,
-    SAMPLE_CONTOURS = 3,
-    SAMPLE_BORDER = 4,
-    NUM_MODES = 5 // Should be kept as last element if new modes are added
+    SAMPLE_ROI_CENTERS = 2,
+    SAMPLE_ROI_CONTOURS = 3,
+    SAMPLE_CONTOURS = 4,
+    SAMPLE_BORDER = 5,
+    NUM_MODES = 6 // Should be kept as last element if new modes are added
   } mode;
 
   bool execute_plan;
@@ -190,6 +191,10 @@ public:
   octomap::point3d computeUnknownDir(const octomap::OcTreeKey &key);
 
   std::vector<Viewpoint> getOccUnkownBorderPoints(const double &dist, const octomap::point3d &camPos, const tf2::Quaternion &camQuat);
+
+  void getFreeNeighbours6(const octomap::OcTreeKey &key, octomap::KeySet &freeKeys);
+
+  std::vector<Viewpoint> sampleRoiContourPoints(const double &dist, const octomap::point3d &camPos, const tf2::Quaternion &camQuat);
 
   std::vector<Viewpoint> getBorderPoints(const octomap::point3d &pmin, const octomap::point3d &pmax, const octomap::point3d &camPos, const tf2::Quaternion &camQuat);
 
