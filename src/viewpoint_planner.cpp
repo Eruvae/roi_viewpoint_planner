@@ -1007,7 +1007,7 @@ std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleRoiContourPoint
   const size_t TOTAL_SAMPLE_TRIES = 100;
 
   std::default_random_engine generator;
-  std::uniform_int_distribution<int> distribution(0, selectedPoints.size());
+  std::uniform_int_distribution<int> distribution(0, selectedPoints.size() - 1);
   for (size_t i = 0; i < TOTAL_SAMPLE_TRIES; i++)
   {
     octomap::point3d target = selectedPoints[distribution(generator)];

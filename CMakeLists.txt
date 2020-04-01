@@ -20,6 +20,7 @@ set (CATKIN_DEPENDENCIES
     image_geometry
     moveit_ros_planning_interface
     eigen_conversions
+    dynamic_reconfigure
 )
 
 ## Find catkin macros and libraries
@@ -105,6 +106,9 @@ generate_messages(
 #   cfg/DynReconf1.cfg
 #   cfg/DynReconf2.cfg
 # )
+generate_dynamic_reconfigure_options(
+    cfg/Planner.cfg
+)
 
 ###################################
 ## catkin specific configuration ##
@@ -132,6 +136,7 @@ include_directories(
   include
   ${catkin_INCLUDE_DIRS}
   ${OCTOMAP_INCLUDE_DIRS}
+  ${dynamic_reconfigure_PACKAGE_PATH}/cmake/cfgbuild.cmake
 )
 
 ## Declare a C++ library
@@ -159,7 +164,7 @@ add_executable(planner_node src/planner_node.cpp src/viewpoint_planner.cpp)
 ## Add cmake target dependencies of the executable
 ## same as for the library above
 # add_dependencies(${PROJECT_NAME}_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
-add_dependencies(planner_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS} roi_viewpoint_planner_generate_messages_cpp)
+add_dependencies(planner_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_gencfg roi_viewpoint_planner_generate_messages_cpp)
 
 ## Specify libraries to link a library or executable target against
 # target_link_libraries(${PROJECT_NAME}_node

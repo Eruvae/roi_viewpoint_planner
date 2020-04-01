@@ -114,6 +114,8 @@ private:
 
 public:
 
+  // Planner parameters
+
   enum PlannerMode
   {
     IDLE = 0,
@@ -126,6 +128,14 @@ public:
   } mode;
 
   bool execute_plan;
+
+  double sensor_min_range;
+  double sensor_max_range;
+  double sensor_opt_range;
+  double sensor_hfov;
+  double sensor_vfov;
+
+  // Planner parameters end
 
   struct Viewpoint
   {

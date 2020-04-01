@@ -67,6 +67,7 @@
   <depend>image_geometry</depend>
   <depend>moveit_ros_planning_interface</depend>
   <depend>eigen_conversions</depend>
+  <depend>dynamic_reconfigure</depend>
 
   <build_depend>message_generation</build_depend>
   <exec_depend>message_runtime</exec_depend>
