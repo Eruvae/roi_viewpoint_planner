@@ -91,6 +91,8 @@ private:
   ros::Publisher cubeVisPub;
   //ros::Publisher planningScenePub;
 
+  ros::ServiceClient requestExecutionConfirmation;
+
   boost::mutex tree_mtx;
 
   message_filters::Subscriber<sensor_msgs::PointCloud2> depthCloudSub;
@@ -128,6 +130,7 @@ public:
   } mode;
 
   bool execute_plan;
+  bool require_execution_confirmation;
 
   double sensor_min_range;
   double sensor_max_range;
@@ -148,7 +151,7 @@ public:
     bool isFree;
   };
 
-  ViewpointPlanner(ros::NodeHandle &nh, int argc, char **argv);
+  ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, int argc, char **argv);
 
   //void publishOctomapToPlanningScene(const octomap_msgs::Octomap &map_msg);
   void publishMap();

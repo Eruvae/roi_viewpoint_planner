@@ -33,6 +33,7 @@ bool changePlannerMode(roi_viewpoint_planner::ChangePlannerMode::Request &req, r
 
 void reconfigureCallback(roi_viewpoint_planner::PlannerConfig &config, uint32_t level)
 {
+  ROS_INFO_STREAM("Reconfigure callback called");
   if (level & (1 << 0) && config.mode >= 0 && config.mode < ViewpointPlanner::NUM_MODES) // change mode
   {
     planner->mode = (ViewpointPlanner::PlannerMode) config.mode;
@@ -40,6 +41,10 @@ void reconfigureCallback(roi_viewpoint_planner::PlannerConfig &config, uint32_t 
   if (level & (1 << 1)) // activate execution
   {
     planner->execute_plan = config.activate_execution;
+  }
+  if (level & (1 << 2)) // request execution confirmation
+  {
+    planner->require_execution_confirmation = config.require_execution_confirmation;
   }
 }
 
@@ -51,11 +56,11 @@ int main(int argc, char **argv)
   ros::AsyncSpinner spinner(4);
   spinner.start();
 
-  planner = new ViewpointPlanner(nh, argc, argv);
+  planner = new ViewpointPlanner(nh, nhp, argc, argv);
   ros::ServiceServer changePlannerModeService = nhp.advertiseService("change_planner_mode", changePlannerMode);
   ros::ServiceServer activatePlanExecutionService = nhp.advertiseService("activate_plan_execution", activatePlanExecution);
 
-  dynamic_reconfigure::Server<roi_viewpoint_planner::PlannerConfig> server;
+  dynamic_reconfigure::Server<roi_viewpoint_planner::PlannerConfig> server(nhp);
 
   server.setCallback(reconfigureCallback);
 

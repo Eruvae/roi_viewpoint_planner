@@ -1,6 +1,8 @@
 #include "viewpoint_planner.h"
 
-ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, int argc, char **argv) :
+#include <std_srvs/Trigger.h>
+
+ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, int argc, char **argv) :
   planningTree(0.02),
   workspaceTree(NULL),
   wsMin(-FLT_MAX, -FLT_MAX, -FLT_MAX),
@@ -25,6 +27,8 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, int argc, char **argv) :
   poseArrayPub = nh.advertise<geometry_msgs::PoseArray>("vp_array", 1);
   workspaceTreePub = nh.advertise<octomap_msgs::Octomap>("workspace_tree", 1, true);
   cubeVisPub = nh.advertise<visualization_msgs::Marker>("cube_vis", 1);
+
+  requestExecutionConfirmation = nhp.serviceClient<std_srvs::Trigger>("request_execution_confirmation");
 
   // Load workspace if specified
   if (argc > 1)
@@ -1170,6 +1174,15 @@ bool ViewpointPlanner::moveToPose(moveit::planning_interface::MoveGroupInterface
   if (success)
   {
     //manipulator_group.asyncExecute(plan);
+    if (require_execution_confirmation)
+    {
+      std_srvs::Trigger requestExecution;
+      if (!requestExecutionConfirmation.call(requestExecution) || !requestExecution.response.success)
+      {
+        ROS_INFO_STREAM("Plan execution denied");
+        return false;
+      }
+    }
     manipulator_group.execute(plan);
   }
   else
