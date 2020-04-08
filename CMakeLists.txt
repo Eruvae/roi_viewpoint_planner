@@ -32,6 +32,9 @@ find_package(catkin REQUIRED COMPONENTS ${CATKIN_DEPENDENCIES} message_generatio
 # find_package(Boost REQUIRED COMPONENTS system)
 find_package(octomap REQUIRED)
 
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(YAMLCPP yaml-cpp REQUIRED)
+
 ## Uncomment this if the package has a setup.py. This macro ensures
 ## modules and global scripts declared therein get installed
 ## See http://ros.org/doc/api/catkin/html/user_guide/setup_dot_py.html
@@ -136,6 +139,7 @@ include_directories(
   include
   ${catkin_INCLUDE_DIRS}
   ${OCTOMAP_INCLUDE_DIRS}
+  ${YAMLCPP_INCLUDE_DIRS}
   ${dynamic_reconfigure_PACKAGE_PATH}/cmake/cfgbuild.cmake
 )
 
@@ -154,6 +158,7 @@ include_directories(
 ## The recommended prefix ensures that target names across packages don't collide
 # add_executable(${PROJECT_NAME}_node src/octomap_vpp_node.cpp)
 add_executable(planner_node src/planner_node.cpp src/viewpoint_planner.cpp)
+add_executable(evaluate_planner src/evaluate_planner.cpp)
 
 ## Rename C++ executable without prefix
 ## The above recommended prefix causes long target names, the following renames the
@@ -165,12 +170,14 @@ add_executable(planner_node src/planner_node.cpp src/viewpoint_planner.cpp)
 ## same as for the library above
 # add_dependencies(${PROJECT_NAME}_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 add_dependencies(planner_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_gencfg roi_viewpoint_planner_generate_messages_cpp)
+add_dependencies(evaluate_planner ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_gencfg roi_viewpoint_planner_generate_messages_cpp)
 
 ## Specify libraries to link a library or executable target against
 # target_link_libraries(${PROJECT_NAME}_node
 #   ${catkin_LIBRARIES}
 # )
 target_link_libraries(planner_node ${catkin_LIBRARIES} ${OCTOMAP_LIBRARIES})
+target_link_libraries(evaluate_planner ${catkin_LIBRARIES} ${OCTOMAP_LIBRARIES} ${YAMLCPP_LIBRARIES})
 
 #############
 ## Install ##

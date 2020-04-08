@@ -2,7 +2,7 @@
 
 #include <std_srvs/Trigger.h>
 
-ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, int argc, char **argv) :
+ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, const std::string &wstree_file) :
   planningTree(0.02),
   workspaceTree(NULL),
   wsMin(-FLT_MAX, -FLT_MAX, -FLT_MAX),
@@ -30,15 +30,21 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, in
 
   requestExecutionConfirmation = nhp.serviceClient<std_srvs::Trigger>("request_execution_confirmation");
 
-  // Load workspace if specified
-  if (argc > 1)
+  // Load workspace
+
+  octomap::AbstractOcTree *tree = octomap::AbstractOcTree::read(wstree_file);
+  if (!tree)
   {
-    octomap::AbstractOcTree *tree = octomap::AbstractOcTree::read(argv[1]);
+    ROS_ERROR_STREAM("Workspace tree file could not be loaded");
+  }
+  else
+  {
     octomap_vpp::CountingOcTree *countingTree = dynamic_cast<octomap_vpp::CountingOcTree*>(tree);
 
     if (countingTree) // convert to workspace tree if counting tree loaded
     {
       workspaceTree = new octomap_vpp::WorkspaceOcTree(*countingTree);
+      delete countingTree;
     }
     else
     {
@@ -47,36 +53,35 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, in
 
     if (!workspaceTree)
     {
-      ROS_ERROR("Tree type not recognized; please load either CountingOcTree or WorkspaceOcTree");
-      return;
+      ROS_ERROR("Workspace tree type not recognized; please load either CountingOcTree or WorkspaceOcTree");
+      delete tree;
     }
-
-    wsMin = octomap::point3d(FLT_MAX, FLT_MAX, FLT_MAX);
-    wsMax = octomap::point3d(-FLT_MAX, -FLT_MAX, -FLT_MAX);
-    for (auto it = workspaceTree->begin_leafs(), end = workspaceTree->end_leafs(); it != end; it++)
+    else
     {
-      octomap::point3d coord = it.getCoordinate();
-      if (coord.x() < wsMin.x()) wsMin.x() = coord.x();
-      if (coord.y() < wsMin.y()) wsMin.y() = coord.y();
-      if (coord.z() < wsMin.z()) wsMin.z() = coord.z();
-      if (coord.x() > wsMax.x()) wsMax.x() = coord.x();
-      if (coord.y() > wsMax.y()) wsMax.y() = coord.y();
-      if (coord.z() > wsMax.z()) wsMax.z() = coord.z();
-    }
+      wsMin = octomap::point3d(FLT_MAX, FLT_MAX, FLT_MAX);
+      wsMax = octomap::point3d(-FLT_MAX, -FLT_MAX, -FLT_MAX);
+      for (auto it = workspaceTree->begin_leafs(), end = workspaceTree->end_leafs(); it != end; it++)
+      {
+        octomap::point3d coord = it.getCoordinate();
+        if (coord.x() < wsMin.x()) wsMin.x() = coord.x();
+        if (coord.y() < wsMin.y()) wsMin.y() = coord.y();
+        if (coord.z() < wsMin.z()) wsMin.z() = coord.z();
+        if (coord.x() > wsMax.x()) wsMax.x() = coord.x();
+        if (coord.y() > wsMax.y()) wsMax.y() = coord.y();
+        if (coord.z() > wsMax.z()) wsMax.z() = coord.z();
+      }
 
-    octomap_msgs::Octomap ws_msg;
-    ws_msg.header.frame_id = "world";
-    ws_msg.header.stamp = ros::Time::now();
-    bool msg_generated = octomap_msgs::fullMapToMsg(*workspaceTree, ws_msg);
-    if (msg_generated)
-    {
-      workspaceTreePub.publish(ws_msg);
+      octomap_msgs::Octomap ws_msg;
+      ws_msg.header.frame_id = "world";
+      ws_msg.header.stamp = ros::Time::now();
+      bool msg_generated = octomap_msgs::fullMapToMsg(*workspaceTree, ws_msg);
+      if (msg_generated)
+      {
+        workspaceTreePub.publish(ws_msg);
+      }
     }
   }
-  else
-  {
-    ROS_WARN("Workspace not specified");
-  }
+
 
   depthCloudSub.registerCallback(&ViewpointPlanner::registerNewScan, this);
   //tfCloudFilter.registerCallback(registerNewScan);

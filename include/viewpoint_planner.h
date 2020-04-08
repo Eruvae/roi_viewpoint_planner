@@ -151,7 +151,7 @@ public:
     bool isFree;
   };
 
-  ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, int argc, char **argv);
+  ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, const std::string &wstree_file);
 
   //void publishOctomapToPlanningScene(const octomap_msgs::Octomap &map_msg);
   void publishMap();

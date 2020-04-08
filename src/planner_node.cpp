@@ -1,4 +1,5 @@
 ﻿#include <ros/ros.h>
+#include <ros/package.h>
 
 #include "viewpoint_planner.h"
 #include "roi_viewpoint_planner/ChangePlannerMode.h"
@@ -56,7 +57,10 @@ int main(int argc, char **argv)
   ros::AsyncSpinner spinner(4);
   spinner.start();
 
-  planner = new ViewpointPlanner(nh, nhp, argc, argv);
+  std::string wstree_default_package = ros::package::getPath("phenorob_ur5e");
+  std::string wstree_file = nhp.param<std::string>("workspace_tree", wstree_default_package + "/workspace_trees/ur_with_cam/workspace_map.ot");
+
+  planner = new ViewpointPlanner(nh, nhp, wstree_file);
   ros::ServiceServer changePlannerModeService = nhp.advertiseService("change_planner_mode", changePlannerMode);
   ros::ServiceServer activatePlanExecutionService = nhp.advertiseService("activate_plan_execution", activatePlanExecution);
 
