@@ -7,6 +7,14 @@
 #include <octomap/octomap_types.h>
 #include <octomap_ros/conversions.h>
 
+//const std_msgs::ColorRGBA COLOR_RED = {.r = 1.f, .g = 0.f, .b = 0.f, .a = 1.f};
+//const std_msgs::ColorRGBA COLOR_GREEN = {1.f, 1.f, 0.f, 1.f};
+//const std_msgs::ColorRGBA COLOR_BLUE = {0.f, 0.f, 1.f, 1.f};
+
+const std_msgs::ColorRGBA COLOR_RED = []{std_msgs::ColorRGBA c; c.r = 1.f; c.g = 0.f; c.b = 0.f; c.a = 1.f; return c; } ();
+const std_msgs::ColorRGBA COLOR_GREEN = []{std_msgs::ColorRGBA c; c.r = 0.f; c.g = 1.f; c.b = 0.f; c.a = 1.f; return c; } ();
+const std_msgs::ColorRGBA COLOR_BLUE = []{std_msgs::ColorRGBA c; c.r = 0.f; c.g = 0.f; c.b = 1.f; c.a = 1.f; return c; } ();
+
 static inline void addEdgesFromCorner(const geometry_msgs::Point &corner, const geometry_msgs::Point &opp, std::vector<geometry_msgs::Point> &list)
 {
   geometry_msgs::Point p = corner;
@@ -52,19 +60,18 @@ static inline void addCubeEdges(const octomap::point3d &min, const octomap::poin
   }
 }
 
-static inline void publishCubeVisualization(ros::Publisher &pub, const std::vector<octomap::point3d> &centers, const std::vector<octomap::point3d> &volumes)
+static inline void publishCubeVisualization(ros::Publisher &pub, const std::vector<octomap::point3d> &centers, const std::vector<octomap::point3d> &volumes,
+                                            const std_msgs::ColorRGBA &col = COLOR_RED, const std::string &ns = "roi_cubes")
 {
   visualization_msgs::Marker cube_msg;
   cube_msg.header.frame_id = "world";
   cube_msg.header.stamp = ros::Time::now();
-  cube_msg.ns = "roi_cubes";
+  cube_msg.ns = ns;
   cube_msg.id = 0;
   cube_msg.type = visualization_msgs::Marker::LINE_LIST;
-  cube_msg.color.a = 1.0;
-  cube_msg.color.r = 1.0;
-  cube_msg.color.g = 0.0;
-  cube_msg.color.b = 0.0;
+  cube_msg.color = col;
   cube_msg.scale.x = 0.002;
+  cube_msg.pose.orientation.w = 1.0; // normalize quaternion
 
   for (size_t i = 0; i < centers.size(); i++)
   {

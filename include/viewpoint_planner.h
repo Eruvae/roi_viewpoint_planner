@@ -65,14 +65,6 @@ const std::string MAP_FRAME = "world";
 const std::string PC_TOPIC = "/move_group/filtered_cloud"; //"/camera/depth/points";
 const std::string PC_GLOBAL = "/points_global";
 
-//const std_msgs::ColorRGBA COLOR_RED = {.r = 1.f, .g = 0.f, .b = 0.f, .a = 1.f};
-//const std_msgs::ColorRGBA COLOR_GREEN = {1.f, 1.f, 0.f, 1.f};
-//const std_msgs::ColorRGBA COLOR_BLUE = {0.f, 0.f, 1.f, 1.f};
-
-const std_msgs::ColorRGBA COLOR_RED = []{std_msgs::ColorRGBA c; c.r = 1.f; c.g = 0.f; c.b = 0.f; c.a = 1.f; return c; } ();
-const std_msgs::ColorRGBA COLOR_GREEN = []{std_msgs::ColorRGBA c; c.r = 0.f; c.g = 1.f; c.b = 0.f; c.a = 1.f; return c; } ();
-const std_msgs::ColorRGBA COLOR_BLUE = []{std_msgs::ColorRGBA c; c.r = 0.f; c.g = 0.f; c.b = 1.f; c.a = 1.f; return c; } ();
-
 class ViewpointPlanner
 {
 private:
