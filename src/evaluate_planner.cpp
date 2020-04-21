@@ -1,5 +1,7 @@
 #include <ros/ros.h>
 #include <ros/package.h>
+#include <dynamic_reconfigure/client.h>
+#include <roi_viewpoint_planner/PlannerConfig.h>
 #include <octomap_vpp/RoiOcTree.h>
 #include <octomap/AbstractOcTree.h>
 #include <octomap_msgs/Octomap.h>
@@ -13,7 +15,7 @@
 
 namespace ublas = boost::numeric::ublas;
 
-octomap_vpp::RoiOcTree* roiTree = new octomap_vpp::RoiOcTree(0.1);
+octomap_vpp::RoiOcTree* roiTree = new octomap_vpp::RoiOcTree(0.02);
 boost::mutex tree_mtx;
 
 void octomapCallback(const octomap_msgs::OctomapConstPtr& msg)
@@ -80,7 +82,7 @@ int main(int argc, char **argv)
 
   std::string package_path = ros::package::getPath("roi_viewpoint_planner");
 
-  std::string gt_file = nhp.param<std::string>("gt", package_path + "/cfg/gt_w11.yaml");
+  std::string gt_file = nhp.param<std::string>("gt", package_path + "/cfg/gt_w12.yaml");
 
   ROS_INFO_STREAM("Reading ground truth");
   std::ifstream gt_ifs(gt_file);
@@ -103,10 +105,51 @@ int main(int argc, char **argv)
 
   gt_ifs.close();
 
+  octomap::KeySet gtRoiKeys;
+  for (size_t i = 0; i < roi_locations.size(); i++)
+  {
+    octomap::OcTreeKey minKey = roiTree->coordToKey(roi_locations[i] - roi_sizes[i] * 0.5);
+    octomap::OcTreeKey maxKey = roiTree->coordToKey(roi_locations[i] + roi_sizes[i] * 0.5);
+    octomap::OcTreeKey curKey = minKey;
+    for (curKey[0] = minKey[0]; curKey[0] <= maxKey[0]; curKey[0]++)
+    {
+      for (curKey[1] = minKey[1]; curKey[1] <= maxKey[1]; curKey[1]++)
+      {
+        for (curKey[2] = minKey[2]; curKey[2] <= maxKey[2]; curKey[2]++)
+        {
+          gtRoiKeys.insert(curKey);
+        }
+      }
+    }
+  }
+  ROS_INFO_STREAM("ROI key count: " << gtRoiKeys.size());
+
   ros::Publisher gt_pub = nhp.advertise<visualization_msgs::Marker>("roi_gt", 10, true);
   publishCubeVisualization(gt_pub, roi_locations, roi_sizes, COLOR_GREEN, "gt_rois");
 
   ros::Subscriber octomap_sub = nh.subscribe("/octomap", 10, octomapCallback);
+  dynamic_reconfigure::Client<roi_viewpoint_planner::PlannerConfig> configClient("/roi_viewpoint_planner");
+
+  std::ofstream resultsFile("planner_results.csv");
+  resultsFile << "Time (s), Detected ROIs, ROI percentage, Average distance, Average volume accuracy, Covered ROI volume, False ROI volume, ROI key count, True ROI keys, False ROI keys" << std::endl;
+
+  roi_viewpoint_planner::PlannerConfig config;
+  if (!configClient.getCurrentConfiguration(config, ros::Duration(1)))
+  {
+    ROS_ERROR("Could not contact configuration server");
+    return -1;
+  }
+  config.activate_execution = true;
+  config.require_execution_confirmation = false;
+  config.mode = roi_viewpoint_planner::Planner_SAMPLE_CONTOURS;
+  if (!configClient.setConfiguration(config))
+  {
+    ROS_ERROR("Applying configuration not successful");
+    return -1;
+  }
+  const double PLANNING_TIME = 180;
+  ros::Time plannerStartTime = ros::Time::now();
+  ROS_INFO("Planner activated");
 
   for (ros::Rate rate(1); ros::ok(); rate.sleep())
   {
@@ -114,11 +157,15 @@ int main(int argc, char **argv)
 
     tree_mtx.lock();
     roiTree->computeRoiKeys();
+    octomap::KeySet roi_keys = roiTree->getRoiKeys();
     std::tie(detected_locs, detected_sizes) = roiTree->getClusterCentersWithVolume();
     tree_mtx.unlock();
 
+    ros::Time currentTime = ros::Time::now();
+
     ROS_INFO_STREAM("GT-Rois: " << roi_locations.size() << ", detected Rois: " << detected_locs.size());
 
+    // Compute Pairs
 
     ublas::matrix<double> distances(roi_locations.size(), detected_locs.size());
     std::vector<IndexPair> indices;
@@ -180,13 +227,100 @@ int main(int argc, char **argv)
       usedGtPoints.set(ind_gt);
       usedDetPoints.set(ind_det);
     }*/
+    double average_dist = 0;
+    double average_vol_accuracy = 0;
     ROS_INFO_STREAM("Closest point pairs:");
     for (const IndexPair &pair : roiPairs)
     {
       ROS_INFO_STREAM(roi_locations[pair.gt_ind] << " and " << detected_locs[pair.det_ind] << "; distance: " << distances(pair.gt_ind, pair.det_ind));
       double gs = roi_sizes[pair.gt_ind].x() * roi_sizes[pair.gt_ind].y() * roi_sizes[pair.gt_ind].z();
       double ds = detected_sizes[pair.det_ind].x() * detected_sizes[pair.det_ind].y() * detected_sizes[pair.det_ind].z();
+
+      double accuracy = 1 - std::abs(ds - gs) / gs;
+
       ROS_INFO_STREAM("Sizes: " << roi_sizes[pair.gt_ind] << " and " << detected_sizes[pair.det_ind] << "; factor: " << (ds / gs));
+
+      average_dist += distances(pair.gt_ind, pair.det_ind);
+      average_vol_accuracy += accuracy;
+    }
+
+    if (roiPairs.size() > 0)
+    {
+      average_dist /= roiPairs.size();
+      average_vol_accuracy /= roiPairs.size();
+    }
+
+    // Compute volume overlap
+
+    octomap::KeySet detectedRoiBBkeys;
+    octomap::KeySet correctRoiBBkeys;
+    octomap::KeySet falseRoiBBkeys;
+    for (size_t i = 0; i < detected_locs.size(); i++)
+    {
+      octomap::OcTreeKey minKey = roiTree->coordToKey(detected_locs[i] - detected_sizes[i] * 0.5);
+      octomap::OcTreeKey maxKey = roiTree->coordToKey(detected_locs[i] + detected_sizes[i] * 0.5);
+      octomap::OcTreeKey curKey = minKey;
+      for (curKey[0] = minKey[0]; curKey[0] <= maxKey[0]; curKey[0]++)
+      {
+        for (curKey[1] = minKey[1]; curKey[1] <= maxKey[1]; curKey[1]++)
+        {
+          for (curKey[2] = minKey[2]; curKey[2] <= maxKey[2]; curKey[2]++)
+          {
+            detectedRoiBBkeys.insert(curKey);
+            if (gtRoiKeys.find(curKey) != gtRoiKeys.end())
+            {
+              correctRoiBBkeys.insert(curKey);
+            }
+            else
+            {
+              falseRoiBBkeys.insert(curKey);
+            }
+          }
+        }
+      }
+    }
+    ROS_INFO_STREAM("Detected key count: " << detectedRoiBBkeys.size() << ", correct: " << correctRoiBBkeys.size() << ", false: " << falseRoiBBkeys.size());
+
+    double coveredRoiVolumeRatio = (double)correctRoiBBkeys.size() / (double)gtRoiKeys.size();
+    double falseRoiVolumeRatio = detectedRoiBBkeys.size() ? (double)falseRoiBBkeys.size() / (double)detectedRoiBBkeys.size() : 0;
+    ROS_INFO_STREAM("Det vol ratio: " << coveredRoiVolumeRatio << ", False vol ratio: " << falseRoiVolumeRatio);
+
+    // Computations directly with ROI cells
+    octomap::KeySet true_roi_keys, false_roi_keys;
+    for (const octomap::OcTreeKey &key : roi_keys)
+    {
+      if (gtRoiKeys.find(key) != gtRoiKeys.end())
+      {
+        true_roi_keys.insert(key);
+      }
+      else
+      {
+        false_roi_keys.insert(key);
+      }
+    }
+
+    double passed_time = (currentTime - plannerStartTime).toSec();
+    //resultsFile << "Time (s), Detected ROIs, ROI percentage, Average distance, Average volume accuracy, Covered ROI volume, False ROI volume" << std::endl;
+    resultsFile << passed_time << ", " << roiPairs.size() << ", " << ((double)roiPairs.size() / (double)roi_locations.size()) << ", "
+                << average_dist << ", " << average_vol_accuracy << ", " << coveredRoiVolumeRatio << ", " << falseRoiVolumeRatio << ", "
+                << roi_keys.size() << ", " << true_roi_keys.size() << ", " << false_roi_keys.size() << std::endl;
+
+    if (passed_time > PLANNING_TIME) // PLANNING_TIME s timeout
+    {
+      if (!configClient.getCurrentConfiguration(config, ros::Duration(1)))
+      {
+        ROS_ERROR("Could not contact configuration server");
+        break;
+      }
+      config.activate_execution = false;
+      config.mode = roi_viewpoint_planner::Planner_IDLE;
+      if (!configClient.setConfiguration(config))
+      {
+        ROS_ERROR("Applying configuration not successful");
+        break;
+      }
+      break;
     }
   }
+  resultsFile.close();
 }

@@ -16,7 +16,8 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, co
   joint_model_group(kinematic_model->getJointModelGroup("manipulator")),
   kinematic_state(new robot_state::RobotState(kinematic_model)),
   mode(IDLE),
-  execute_plan(false)
+  execute_plan(false),
+  robotIsMoving(false)
 {
   octomapPub = nh.advertise<octomap_msgs::Octomap>("octomap", 1);
   inflatedOctomapPub = nh.advertise<octomap_msgs::Octomap>("inflated_octomap", 1);
@@ -161,6 +162,12 @@ void ViewpointPlanner::publishMap()
 
 void ViewpointPlanner::registerNewScan(const sensor_msgs::PointCloud2ConstPtr &pc_msg)
 {
+  if (robotIsMoving.load() == true)
+  {
+    ROS_INFO_STREAM("Robot is currently moving, not inserting scans");
+    return;
+  }
+
   ros::Time cbStartTime = ros::Time::now();
   geometry_msgs::TransformStamped pcFrameTf;
   static Eigen::Affine3d lastCamPose;
@@ -271,6 +278,12 @@ void ViewpointPlanner::pointCloud2ToOctomapByIndices(const sensor_msgs::PointClo
 
 void ViewpointPlanner::registerRoiPCL(const pointcloud_roi_msgs::PointcloudWithRoi &roi)
 {
+  if (robotIsMoving.load() == true)
+  {
+    ROS_INFO_STREAM("Robot is currently moving, not inserting scans");
+    return;
+  }
+
   octomap::Pointcloud inlierCloud, outlierCloud;
   pointCloud2ToOctomapByIndices(roi.cloud, roi.roi_indices, inlierCloud, outlierCloud);
   //ROS_INFO_STREAM("Cloud sizes: " << inlierCloud.size() << ",  " << outlierCloud.size());
@@ -1188,7 +1201,9 @@ bool ViewpointPlanner::moveToPose(moveit::planning_interface::MoveGroupInterface
         return false;
       }
     }
+    robotIsMoving.store(true);
     manipulator_group.execute(plan);
+    robotIsMoving.store(false);
   }
   else
   {
@@ -1280,18 +1295,18 @@ void ViewpointPlanner::plannerLoop()
       publishViewpointVisualizations(contourVps, "contourPoints", COLOR_GREEN);
     }
 
-    if (mode == SAMPLE_BORDER /*|| mode == SAMPLE_AUTOMATIC*/)
-    {
-      borderVps = getBorderPoints(box_min, box_max, octomap::point3d(camOrig.x, camOrig.y, camOrig.z), camQuat);
-      std::make_heap(borderVps.begin(), borderVps.end(), vpComp);
-      publishViewpointVisualizations(borderVps, "borderPoints", COLOR_BLUE);
-    }
-
     if (mode == SAMPLE_ROI_CONTOURS || mode == SAMPLE_AUTOMATIC)
     {
       roiContourVps = sampleRoiContourPoints(0.5, octomap::point3d(camOrig.x, camOrig.y, camOrig.z), camQuat);
       std::make_heap(roiContourVps.begin(), roiContourVps.end(), vpComp);
       publishViewpointVisualizations(roiContourVps, "roiContourPoints", COLOR_RED);
+    }
+
+    if (mode == SAMPLE_BORDER || (mode == SAMPLE_AUTOMATIC && contourVps.empty() && roiContourVps.empty()))
+    {
+      borderVps = getBorderPoints(box_min, box_max, octomap::point3d(camOrig.x, camOrig.y, camOrig.z), camQuat);
+      std::make_heap(borderVps.begin(), borderVps.end(), vpComp);
+      publishViewpointVisualizations(borderVps, "borderPoints", COLOR_BLUE);
     }
 
     std::pair<std::vector<octomap::point3d>, std::vector<octomap::point3d>> clusterCentersWithVol = planningTree.getClusterCentersWithVolume();
@@ -1344,8 +1359,16 @@ void ViewpointPlanner::plannerLoop()
         ROS_INFO_STREAM("Using ROI viewpoint targeting");
         return roiContourVps;
       }
-      ROS_INFO_STREAM("Using exploration viewpoints");
-      return contourVps;
+      else if (!contourVps.empty())
+      {
+        ROS_INFO_STREAM("Using exploration viewpoints");
+        return contourVps;
+      }
+      else
+      {
+        ROS_INFO_STREAM("Using border viewpoints");
+        return borderVps;
+      }
     }();
 
     for (/*std::make_heap(nextViewpoints.begin(), nextViewpoints.end(), vpComp)*/; !nextViewpoints.empty(); std::pop_heap(nextViewpoints.begin(), nextViewpoints.end(), vpComp), nextViewpoints.pop_back())

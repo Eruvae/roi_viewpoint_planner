@@ -106,6 +106,8 @@ private:
   const robot_state::JointModelGroup* joint_model_group;
   robot_state::RobotStatePtr kinematic_state;
 
+  std::atomic_bool robotIsMoving;
+
 public:
 
   // Planner parameters

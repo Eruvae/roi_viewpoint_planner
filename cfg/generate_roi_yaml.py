@@ -3,7 +3,7 @@ import numpy as np
 
 map_rois = {'rois': []}
 
-with open('world11_plants.yaml') as f:
+with open('world12_plants.yaml') as f:
     
     plant_locs = yaml.load(f, Loader=yaml.FullLoader)
     
@@ -24,6 +24,6 @@ def float_representer(dumper, value):
     return dumper.represent_scalar(u'tag:yaml.org,2002:float', text)
 yaml.add_representer(float, float_representer)
 
-with open('gt_w11.yaml', 'w') as f:
+with open('gt_w12.yaml', 'w') as f:
     data = yaml.dump(map_rois, f, default_flow_style=None)
 
