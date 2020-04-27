@@ -35,6 +35,7 @@
 #include <random>
 #include <vector>
 #include <algorithm>
+#include <unordered_set>
 
 #if defined(__GNUC__ ) && (__GNUC__  < 7) // GCC < 7 has sample only in experimental namespace
 #include <experimental/algorithm>
@@ -108,6 +109,8 @@ private:
 
   std::atomic_bool robotIsMoving;
 
+  std::default_random_engine random_engine;
+
 public:
 
   // Planner parameters
@@ -120,7 +123,8 @@ public:
     SAMPLE_ROI_CONTOURS = 3,
     SAMPLE_CONTOURS = 4,
     SAMPLE_BORDER = 5,
-    NUM_MODES = 6 // Should be kept as last element if new modes are added
+    SAMPLE_ROI_ADJACENT = 6,
+    NUM_MODES = 7 // Should be kept as last element if new modes are added
   } mode;
 
   bool execute_plan;
@@ -128,7 +132,6 @@ public:
 
   double sensor_min_range;
   double sensor_max_range;
-  double sensor_opt_range;
   double sensor_hfov;
   double sensor_vfov;
 
@@ -160,6 +163,13 @@ public:
 
   void registerRoi(const sensor_msgs::PointCloud2ConstPtr &pc_msg, const instance_segmentation_msgs::DetectionsConstPtr &dets_msg);
 
+  inline double sampleRandomSensorDistance()
+  {
+    if (sensor_min_range == sensor_max_range) return sensor_max_range;
+    std::uniform_real_distribution<double> dist_distribution(sensor_min_range, sensor_max_range);
+    return dist_distribution(random_engine);
+  }
+
   octomap::point3d sampleRandomPointOnSphere(const octomap::point3d &center, double radius);
 
   //void getBorderPoints(const octomap::point3d &orig, double maxDist)
@@ -173,11 +183,11 @@ public:
    */
   tf2::Quaternion dirVecToQuat(octomath::Vector3 dirVec, const tf2::Quaternion &camQuat, const tf2::Vector3 &viewDir);
 
-  std::vector<Viewpoint> sampleAroundMultiROICenters(const std::vector<octomap::point3d> &centers, const double &dist, const octomap::point3d &camPos, const tf2::Quaternion &camQuat);
+  std::vector<Viewpoint> sampleAroundMultiROICenters(const std::vector<octomap::point3d> &centers, const octomap::point3d &camPos, const tf2::Quaternion &camQuat);
 
   void publishViewpointVisualizations(const std::vector<Viewpoint> &viewpoints, const std::string &ns, const std_msgs::ColorRGBA &color = COLOR_RED);
 
-  void sampleAroundROICenter(const octomap::point3d &center, const double &dist,  const octomap::point3d &camPos, const tf2::Quaternion &camQuat, size_t roiID = 0);
+  void sampleAroundROICenter(const octomap::point3d &center,  const octomap::point3d &camPos, const tf2::Quaternion &camQuat, size_t roiID = 0);
 
   double computeExpectedRayIGinWorkspace(const octomap::KeyRay &ray);
 
@@ -191,19 +201,21 @@ public:
 
   bool hasUnknownAndOccupiedNeighbour18(const octomap::OcTreeKey &key, unsigned int depth = 0);
 
-  void getBorderPoints(const octomap::point3d &pmin, const octomap::point3d &pmax, unsigned int depth = 0);
+  void visualizeBorderPoints(const octomap::point3d &pmin, const octomap::point3d &pmax, unsigned int depth = 0);
 
   octomap::point3d computeSurfaceNormalDir(const octomap::OcTreeKey &key);
 
   octomap::point3d computeUnknownDir(const octomap::OcTreeKey &key);
 
-  std::vector<Viewpoint> getOccUnkownBorderPoints(const double &dist, const octomap::point3d &camPos, const tf2::Quaternion &camQuat);
+  std::vector<Viewpoint> sampleContourPoints(const octomap::point3d &camPos, const tf2::Quaternion &camQuat);
 
   void getFreeNeighbours6(const octomap::OcTreeKey &key, octomap::KeySet &freeKeys);
 
-  std::vector<Viewpoint> sampleRoiContourPoints(const double &dist, const octomap::point3d &camPos, const tf2::Quaternion &camQuat);
+  std::vector<Viewpoint> sampleRoiContourPoints(const octomap::point3d &camPos, const tf2::Quaternion &camQuat);
 
-  std::vector<Viewpoint> getBorderPoints(const octomap::point3d &pmin, const octomap::point3d &pmax, const octomap::point3d &camPos, const tf2::Quaternion &camQuat);
+  std::vector<Viewpoint> sampleRoiAdjecentCountours(const octomap::point3d &camPos, const tf2::Quaternion &camQuat);
+
+  std::vector<Viewpoint> sampleBorderPoints(const octomap::point3d &pmin, const octomap::point3d &pmax, const octomap::point3d &camPos, const tf2::Quaternion &camQuat);
 
   robot_state::RobotStatePtr sampleNextRobotState(const robot_state::JointModelGroup *joint_model_group, const robot_state::RobotState &current_state);
 

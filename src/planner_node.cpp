@@ -47,6 +47,24 @@ void reconfigureCallback(roi_viewpoint_planner::PlannerConfig &config, uint32_t 
   {
     planner->require_execution_confirmation = config.require_execution_confirmation;
   }
+  if (level & (1 << 3)) // minimum sensor range
+  {
+    planner->sensor_min_range = config.sensor_min_range;
+    if (planner->sensor_max_range < planner->sensor_min_range && !(level & (1 << 4)))
+    {
+      planner->sensor_max_range = planner->sensor_min_range;
+      config.sensor_max_range = planner->sensor_max_range;
+    }
+  }
+  if (level & (1 << 4)) // maximum sensor range
+  {
+    planner->sensor_max_range = config.sensor_max_range;
+    if (planner->sensor_min_range > planner->sensor_max_range)
+    {
+      planner->sensor_min_range = planner->sensor_max_range;
+      config.sensor_min_range = planner->sensor_min_range;
+    }
+  }
 }
 
 int main(int argc, char **argv)
