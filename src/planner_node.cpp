@@ -4,10 +4,13 @@
 #include "viewpoint_planner.h"
 #include "roi_viewpoint_planner/ChangePlannerMode.h"
 #include <std_srvs/SetBool.h>
+#include <std_srvs/Trigger.h>
 #include <boost/algorithm/string/predicate.hpp>
 
 #include <dynamic_reconfigure/server.h>
 #include "roi_viewpoint_planner/PlannerConfig.h"
+
+#include "octomap_vpp/marching_cubes.h"
 
 ViewpointPlanner *planner;
 
@@ -15,6 +18,13 @@ bool activatePlanExecution(std_srvs::SetBool::Request &req, std_srvs::SetBool::R
 {
   planner->execute_plan = req.data;
   res.success = true;
+  return true;
+}
+
+bool saveTreeAsObj(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res)
+{
+  res.success = planner->saveTreeAsObj("planning_tree.obj");
+  planner->saveROIsAsObj("roi_mesh.obj");
   return true;
 }
 
@@ -81,6 +91,7 @@ int main(int argc, char **argv)
   planner = new ViewpointPlanner(nh, nhp, wstree_file);
   ros::ServiceServer changePlannerModeService = nhp.advertiseService("change_planner_mode", changePlannerMode);
   ros::ServiceServer activatePlanExecutionService = nhp.advertiseService("activate_plan_execution", activatePlanExecution);
+  ros::ServiceServer saveTreeAsObjService = nhp.advertiseService("save_tree_as_obj", saveTreeAsObj);
 
   dynamic_reconfigure::Server<roi_viewpoint_planner::PlannerConfig> server(nhp);
 

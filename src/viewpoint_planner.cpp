@@ -1,6 +1,7 @@
 #include "viewpoint_planner.h"
 
 #include <std_srvs/Trigger.h>
+#include "octomap_vpp/marching_cubes.h"
 
 ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, const std::string &wstree_file) :
   planningTree(0.02),
@@ -1334,6 +1335,34 @@ bool ViewpointPlanner::moveToState(moveit::planning_interface::MoveGroupInterfac
   return success;
 }
 
+bool ViewpointPlanner::saveTreeAsObj(const std::string &file_name)
+{
+  std::vector<octomap::point3d> vertices;
+  std::vector<octomap_vpp::Triangle> faces;
+  tree_mtx.lock();
+  auto isOcc = [](const octomap_vpp::RoiOcTree &tree, const octomap_vpp::RoiOcTreeNode *node) { return node->getLogOdds() > 0; };
+  octomap_vpp::polygonize<octomap_vpp::RoiOcTree>(planningTree, vertices, faces, isOcc);
+  tree_mtx.unlock();
+  std::ofstream tree_out(file_name);
+  octomap_vpp::generateObj(tree_out, vertices, faces);
+  tree_out.close();
+  return true;
+}
+
+bool ViewpointPlanner::saveROIsAsObj(const std::string &file_name)
+{
+  std::vector<octomap::point3d> vertices;
+  std::vector<octomap_vpp::Triangle> faces;
+  tree_mtx.lock();
+  auto isOcc = [](const octomap_vpp::RoiOcTree &tree, const octomap_vpp::RoiOcTreeNode *node) { return tree.isNodeROI(node); };
+  octomap_vpp::polygonize<octomap_vpp::RoiOcTree>(planningTree, vertices, faces, isOcc);
+  tree_mtx.unlock();
+  std::ofstream tree_out(file_name);
+  octomap_vpp::generateObj(tree_out, vertices, faces);
+  tree_out.close();
+  return true;
+}
+
 void ViewpointPlanner::plannerLoop()
 {
   for (ros::Rate rate(1); ros::ok(); rate.sleep())
@@ -1418,7 +1447,7 @@ void ViewpointPlanner::plannerLoop()
     {
       roiAdjacentVps = sampleRoiAdjecentCountours(camOrig, camQuat);
       std::make_heap(roiAdjacentVps.begin(), roiAdjacentVps.end(), vpComp);
-      publishViewpointVisualizations(roiContourVps, "roiAdjPoints", COLOR_RED);
+      publishViewpointVisualizations(roiAdjacentVps, "roiAdjPoints", COLOR_RED);
     }
 
     std::pair<std::vector<octomap::point3d>, std::vector<octomap::point3d>> clusterCentersWithVol = planningTree.getClusterCentersWithVolume();

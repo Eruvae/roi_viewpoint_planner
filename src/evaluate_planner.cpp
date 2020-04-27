@@ -141,7 +141,7 @@ int main(int argc, char **argv)
   }
   config.activate_execution = true;
   config.require_execution_confirmation = false;
-  config.mode = roi_viewpoint_planner::Planner_SAMPLE_CONTOURS;
+  config.mode = roi_viewpoint_planner::Planner_SAMPLE_AUTOMATIC;
   if (!configClient.setConfiguration(config))
   {
     ROS_ERROR("Applying configuration not successful");

@@ -223,6 +223,10 @@ public:
 
   bool moveToState(moveit::planning_interface::MoveGroupInterface &manipulator_group, const robot_state::RobotState &goal_state);
 
+  bool saveTreeAsObj(const std::string &file_name);
+
+  bool saveROIsAsObj(const std::string &file_name);
+
   void plannerLoop();
 };
 
