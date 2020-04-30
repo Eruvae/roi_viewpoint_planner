@@ -82,7 +82,7 @@ int main(int argc, char **argv)
 
   std::string package_path = ros::package::getPath("roi_viewpoint_planner");
 
-  std::string gt_file = nhp.param<std::string>("gt", package_path + "/cfg/gt_w12.yaml");
+  std::string gt_file = nhp.param<std::string>("gt", package_path + "/cfg/gt_w14.yaml");
 
   ROS_INFO_STREAM("Reading ground truth");
   std::ifstream gt_ifs(gt_file);
@@ -141,7 +141,7 @@ int main(int argc, char **argv)
   }
   config.activate_execution = true;
   config.require_execution_confirmation = false;
-  config.mode = roi_viewpoint_planner::Planner_SAMPLE_AUTOMATIC;
+  config.mode = roi_viewpoint_planner::Planner_SAMPLE_CONTOURS;
   if (!configClient.setConfiguration(config))
   {
     ROS_ERROR("Applying configuration not successful");
