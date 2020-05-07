@@ -683,7 +683,7 @@ double ViewpointPlanner::computeExpectedRayIGinWorkspace(const octomap::KeyRay &
   for (const octomap::OcTreeKey &key : ray)
   {
     octomap_vpp::RoiOcTreeNode *node = planningTree.search(key);
-    float reachability = workspaceTree ? workspaceTree->getReachability(key) : 1.f;
+    float reachability = workspaceTree ? workspaceTree->getReachability(planningTree.keyToCoord(key)) : 1.f;
     if (reachability > 0) reachability = 1.f; // Test: binarize reachability
     if (node == NULL)
     {
@@ -701,7 +701,7 @@ double ViewpointPlanner::computeExpectedRayIGinWorkspace(const octomap::KeyRay &
     }
     /*float logOdds = testTree.keyToLogOdds(key);
     double gain = testTree.computeExpectedInformationGain(logOdds);
-    double reachability = workspaceTree ? workspaceTree->getReachability(key) : 1.0; // default to 1 if reachability not specified
+    double reachability = workspaceTree ? workspaceTree->getReachability(planningTree.keyToCoord(key)) : 1.0; // default to 1 if reachability not specified
     //const double RB_WEIGHT = 0.5;
     double weightedGain = reachability * gain;//RB_WEIGHT * reachability + (1 - RB_WEIGHT) * gain;
     expected_gain += weightedGain; // * curProb
@@ -909,7 +909,7 @@ std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleContourPoints(c
   std::vector<Viewpoint> sampled_vps;
   for (auto it = planningTree.begin_leafs_bbx(wsMin, wsMax), end = planningTree.end_leafs_bbx(); it != end; it++)
   {
-    if (workspaceTree != NULL && workspaceTree->search(it.getKey()) == NULL) // workspace specified and sampled point not in workspace
+    if (workspaceTree != NULL && workspaceTree->search(it.getCoordinate()) == NULL) // workspace specified and sampled point not in workspace
     {
       continue;
     }
@@ -1109,7 +1109,7 @@ std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleRoiAdjecentCoun
 
   for (const octomap::OcTreeKey &key : inflated_roi_keys)
   {
-    if (workspaceTree != NULL && workspaceTree->search(key) == NULL) // workspace specified and sampled point not in workspace
+    if (workspaceTree != NULL && workspaceTree->search(planningTree.keyToCoord(key)) == NULL) // workspace specified and sampled point not in workspace
     {
       continue;
     }
@@ -1206,7 +1206,7 @@ std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleBorderPoints(co
 
   for (auto it = planningTree.begin_leafs_bbx(pmin, pmax), end = planningTree.end_leafs_bbx(); it != end; it++)
   {
-    if (workspaceTree != NULL && workspaceTree->search(it.getKey()) == NULL) // workspace specified and sampled point not in workspace
+    if (workspaceTree != NULL && workspaceTree->search(it.getCoordinate()) == NULL) // workspace specified and sampled point not in workspace
     {
       continue;
     }
@@ -1355,7 +1355,7 @@ bool ViewpointPlanner::saveROIsAsObj(const std::string &file_name)
   std::vector<octomap_vpp::Triangle> faces;
   tree_mtx.lock();
   auto isOcc = [](const octomap_vpp::RoiOcTree &tree, const octomap_vpp::RoiOcTreeNode *node) { return tree.isNodeROI(node); };
-  octomap_vpp::polygonize<octomap_vpp::RoiOcTree>(planningTree, vertices, faces, isOcc);
+  octomap_vpp::polygonizeSubset<octomap_vpp::RoiOcTree>(planningTree, planningTree.getRoiKeys(), vertices, faces, isOcc);
   tree_mtx.unlock();
   std::ofstream tree_out(file_name);
   octomap_vpp::generateObj(tree_out, vertices, faces);

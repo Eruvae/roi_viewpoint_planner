@@ -11,6 +11,8 @@
 #include <boost/thread/mutex.hpp>
 #include <boost/dynamic_bitset.hpp>
 #include <boost/numeric/ublas/matrix.hpp>
+#include <octomap_vpp/marching_cubes.h>
+#include <octomap_vpp/octomap_pcl.h>
 #include "compute_cubes.h"
 
 namespace ublas = boost::numeric::ublas;
@@ -141,7 +143,7 @@ int main(int argc, char **argv)
   }
   config.activate_execution = true;
   config.require_execution_confirmation = false;
-  config.mode = roi_viewpoint_planner::Planner_SAMPLE_CONTOURS;
+  config.mode = roi_viewpoint_planner::Planner_SAMPLE_AUTOMATIC;
   if (!configClient.setConfiguration(config))
   {
     ROS_ERROR("Applying configuration not successful");
@@ -159,6 +161,27 @@ int main(int argc, char **argv)
     roiTree->computeRoiKeys();
     octomap::KeySet roi_keys = roiTree->getRoiKeys();
     std::tie(detected_locs, detected_sizes) = roiTree->getClusterCentersWithVolume();
+
+    // Mesh computations
+    std::vector<octomap::point3d> vertices;
+    std::vector<octomap_vpp::Triangle> faces;
+    auto isRoi = [](const octomap_vpp::RoiOcTree &tree, const octomap_vpp::RoiOcTreeNode *node) { return tree.isNodeROI(node); };
+    auto isOcc = [](const octomap_vpp::RoiOcTree &tree, const octomap_vpp::RoiOcTreeNode *node) { return node->getLogOdds() > 0; };
+    octomap_vpp::polygonizeSubset<octomap_vpp::RoiOcTree>(*roiTree, roi_keys, vertices, faces, isRoi);
+
+    // PCL Tests
+    auto faceClusters = octomap_vpp::computeFaceClusters(faces);
+    auto vertexClusters = octomap_vpp::computeClusterVertices(vertices, faceClusters);
+
+    for (const octomap::point3d_collection &coll : vertexClusters)
+    {
+      pcl::PointCloud<pcl::PointXYZ>::Ptr cluster_cloud = octomap_vpp::octomapPointCollectionToPcl<pcl::PointXYZ>(coll);
+      ROS_INFO_STREAM("Cluster cloud size: " << cluster_cloud->size());
+    }
+
+    pcl::PointCloud<pcl::PointXYZ>::Ptr pcl_cloud = octomap_vpp::octomapToPcl<octomap_vpp::RoiOcTree, pcl::PointXYZ>(*roiTree, isOcc);
+    ROS_INFO_STREAM(pcl_cloud->size());
+
     tree_mtx.unlock();
 
     ros::Time currentTime = ros::Time::now();
