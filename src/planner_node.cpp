@@ -97,9 +97,15 @@ int main(int argc, char **argv)
 
   server.setCallback(reconfigureCallback);
 
-  std::vector<double> joint_start_values = {-0.8, -0.2, 0, 0, 0, 0, 1.5708, -1.5708, 0};
-
-  planner->moveToState(joint_start_values);
+  std::vector<double> joint_start_values;
+  if(nhp.getParam("initial_joint_values", joint_start_values))
+  {
+    planner->moveToState(joint_start_values);
+  }
+  else
+  {
+    ROS_WARN("No inital joint values set");
+  }
 
   planner->plannerLoop();
 }
