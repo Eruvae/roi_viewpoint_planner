@@ -221,6 +221,8 @@ public:
 
   bool moveToPose(moveit::planning_interface::MoveGroupInterface &manipulator_group, const geometry_msgs::Pose &goal_pose);
 
+  bool moveToState(const std::vector<double> &joint_values);
+
   bool moveToState(moveit::planning_interface::MoveGroupInterface &manipulator_group, const robot_state::RobotState &goal_state);
 
   bool saveTreeAsObj(const std::string &file_name);

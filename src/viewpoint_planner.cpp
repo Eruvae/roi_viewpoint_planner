@@ -953,7 +953,7 @@ std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleContourPoints(c
     vp.target = contourPoint;
     vp.orientation = dirVecToQuat(-normalDir, camQuat, viewDir);
     octomap::pose6d viewpose(vp.point, octomath::Quaternion(vp.orientation.w(), vp.orientation.x(), vp.orientation.y(), vp.orientation.z()));
-    vp.infoGain = computeViewpointWorkspaceValue(viewpose, 80.0 * M_PI / 180.0, 8, 6, 5.0);
+    vp.infoGain = computeViewpointWorkspaceValue(viewpose, 80.0 * M_PI / 180.0, 8, 6, sensor_max_range); // planningTree.computeViewpointValue(viewpose, 80.0 * M_PI / 180.0, 8, 6, sensor_max_range, false);
     vp.distance = (vp.point - camPos).norm();
     vp.utility = vp.infoGain - 0.2 * vp.distance;
     vp.isFree = true;
@@ -1335,6 +1335,25 @@ bool ViewpointPlanner::moveToState(moveit::planning_interface::MoveGroupInterfac
   return success;
 }
 
+bool ViewpointPlanner::moveToState(const std::vector<double> &joint_values)
+{
+  kinematic_state->setJointGroupPositions(joint_model_group, joint_values);
+  manipulator_group.setJointValueTarget(*kinematic_state);
+
+  moveit::planning_interface::MoveGroupInterface::Plan plan;
+  bool success = (manipulator_group.plan(plan) == moveit::planning_interface::MoveItErrorCode::SUCCESS);
+
+  if (success)
+  {
+    manipulator_group.asyncExecute(plan);
+  }
+  else
+  {
+    ROS_INFO("Can't execute plan");
+  }
+  return success;
+}
+
 bool ViewpointPlanner::saveTreeAsObj(const std::string &file_name)
 {
   std::vector<octomap::point3d> vertices;
@@ -1408,8 +1427,8 @@ void ViewpointPlanner::plannerLoop()
 
     const geometry_msgs::Vector3 &camOrigTf = camFrameTf.transform.translation;
     octomap::point3d camOrig(camOrigTf.x, camOrigTf.y, camOrigTf.z);
-    octomap::point3d box_min(camOrig.x() - 0.2, camOrig.y() - 0.2, camOrig.z() - 0.2);
-    octomap::point3d box_max(camOrig.x() + 0.2, camOrig.y() + 0.2, camOrig.z() + 0.2);
+    octomap::point3d box_min(camOrig.x() - 0.5, camOrig.y() - 0.5, camOrig.z() - 0.5);
+    octomap::point3d box_max(camOrig.x() + 0.5, camOrig.y() + 0.5, camOrig.z() + 0.5);
     //getBorderPoints(box_min, box_max);
 
     tf2::Quaternion camQuat;
@@ -1436,7 +1455,7 @@ void ViewpointPlanner::plannerLoop()
       publishViewpointVisualizations(roiContourVps, "roiContourPoints", COLOR_RED);
     }
 
-    if (mode == SAMPLE_BORDER || (mode == SAMPLE_AUTOMATIC && contourVps.empty() && roiContourVps.empty()))
+    if (mode == SAMPLE_BORDER || ((mode == SAMPLE_AUTOMATIC || mode == SAMPLE_CONTOURS) && contourVps.empty() && roiContourVps.empty()))
     {
       borderVps = sampleBorderPoints(box_min, box_max, camOrig, camQuat);
       std::make_heap(borderVps.begin(), borderVps.end(), vpComp);
@@ -1492,7 +1511,7 @@ void ViewpointPlanner::plannerLoop()
     {
       if (mode == SAMPLE_ROI_CENTERS) return roiCenterVps;
       else if (mode == SAMPLE_ROI_CONTOURS) return roiContourVps;
-      else if (mode == SAMPLE_CONTOURS) return contourVps;
+      else if (mode == SAMPLE_CONTOURS) return contourVps.empty() ? borderVps : contourVps;
       else if (mode == SAMPLE_BORDER) return borderVps;
       else if (mode == SAMPLE_ROI_ADJACENT) return roiAdjacentVps;
 

@@ -84,7 +84,7 @@ int main(int argc, char **argv)
 
   std::string package_path = ros::package::getPath("roi_viewpoint_planner");
 
-  std::string gt_file = nhp.param<std::string>("gt", package_path + "/cfg/gt_w14.yaml");
+  std::string gt_file = nhp.param<std::string>("gt", package_path + "/cfg/gt_w18.yaml");
 
   ROS_INFO_STREAM("Reading ground truth");
   std::ifstream gt_ifs(gt_file);

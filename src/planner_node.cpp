@@ -97,5 +97,9 @@ int main(int argc, char **argv)
 
   server.setCallback(reconfigureCallback);
 
+  std::vector<double> joint_start_values = {-0.8, -0.2, 0, 0, 0, 0, 1.5708, -1.5708, 0};
+
+  planner->moveToState(joint_start_values);
+
   planner->plannerLoop();
 }
