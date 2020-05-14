@@ -85,10 +85,16 @@ int main(int argc, char **argv)
   ros::AsyncSpinner spinner(4);
   spinner.start();
 
+  double tree_resolution = 0.01;
+  if (nhp.hasParam("tree_resolution"))
+    nhp.getParam("tree_resolution", tree_resolution);
+  else
+    nhp.setParam("tree_resolution", 0.01);
+
   std::string wstree_default_package = ros::package::getPath("phenorob_ur5e");
   std::string wstree_file = nhp.param<std::string>("workspace_tree", wstree_default_package + "/workspace_trees/ur_retractable/workspace_map.ot");
 
-  planner = new ViewpointPlanner(nh, nhp, wstree_file);
+  planner = new ViewpointPlanner(nh, nhp, wstree_file, tree_resolution);
   ros::ServiceServer changePlannerModeService = nhp.advertiseService("change_planner_mode", changePlannerMode);
   ros::ServiceServer activatePlanExecutionService = nhp.advertiseService("activate_plan_execution", activatePlanExecution);
   ros::ServiceServer saveTreeAsObjService = nhp.advertiseService("save_tree_as_obj", saveTreeAsObj);

@@ -3,8 +3,8 @@
 #include <std_srvs/Trigger.h>
 #include "octomap_vpp/marching_cubes.h"
 
-ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, const std::string &wstree_file) :
-  planningTree(0.02),
+ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, const std::string &wstree_file, double tree_resolution) :
+  planningTree(tree_resolution),
   workspaceTree(NULL),
   wsMin(-FLT_MAX, -FLT_MAX, -FLT_MAX),
   wsMax(FLT_MAX, FLT_MAX, FLT_MAX),

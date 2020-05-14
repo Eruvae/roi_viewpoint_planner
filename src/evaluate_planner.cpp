@@ -17,7 +17,7 @@
 
 namespace ublas = boost::numeric::ublas;
 
-octomap_vpp::RoiOcTree* roiTree = new octomap_vpp::RoiOcTree(0.02);
+octomap_vpp::RoiOcTree* roiTree;
 boost::mutex tree_mtx;
 
 void octomapCallback(const octomap_msgs::OctomapConstPtr& msg)
@@ -84,6 +84,15 @@ int main(int argc, char **argv)
 
   std::string package_path = ros::package::getPath("roi_viewpoint_planner");
 
+  double tree_resolution;
+  if (!nh.getParam("/roi_viewpoint_planner/tree_resolution", tree_resolution))
+  {
+    ROS_ERROR("Planning tree resolution not found, make sure the planner is started");
+    return -1;
+  }
+
+  roiTree = new octomap_vpp::RoiOcTree(tree_resolution);
+
   std::string gt_file = nhp.param<std::string>("gt", package_path + "/cfg/gt_w18.yaml");
 
   ROS_INFO_STREAM("Reading ground truth");
@@ -107,6 +116,8 @@ int main(int argc, char **argv)
 
   gt_ifs.close();
 
+  // Compute GT-keys from bounding boxes
+
   octomap::KeySet gtRoiKeys;
   for (size_t i = 0; i < roi_locations.size(); i++)
   {
@@ -124,12 +135,29 @@ int main(int argc, char **argv)
       }
     }
   }
-  ROS_INFO_STREAM("ROI key count: " << gtRoiKeys.size());
+  ROS_INFO_STREAM("BB ROI key count: " << gtRoiKeys.size());
+
+  // Read GT octree
+  octomap::OcTree gt_tree("gt_tree_world14.bt");
+  gt_tree.expand(); // for key computations to work
+  octomap::KeySet gt_tree_keys;
+
+  for (auto it = gt_tree.begin_leafs(), end = gt_tree.end_leafs(); it != end; it++)
+  {
+    gt_tree_keys.insert(it.getKey());
+  }
+
+  ROS_INFO_STREAM("GT tree ROI key count: " << gt_tree_keys.size());
+
+  // Register publishers and subscribers
 
   ros::Publisher gt_pub = nhp.advertise<visualization_msgs::Marker>("roi_gt", 10, true);
   publishCubeVisualization(gt_pub, roi_locations, roi_sizes, COLOR_GREEN, "gt_rois");
 
   ros::Subscriber octomap_sub = nh.subscribe("/octomap", 10, octomapCallback);
+
+  // Activate planner
+
   dynamic_reconfigure::Client<roi_viewpoint_planner::PlannerConfig> configClient("/roi_viewpoint_planner");
 
   std::ofstream resultsFile("planner_results.csv");
@@ -163,7 +191,7 @@ int main(int argc, char **argv)
     std::tie(detected_locs, detected_sizes) = roiTree->getClusterCentersWithVolume();
 
     // Mesh computations
-    std::vector<octomap::point3d> vertices;
+    /*std::vector<octomap::point3d> vertices;
     std::vector<octomap_vpp::Triangle> faces;
     auto isRoi = [](const octomap_vpp::RoiOcTree &tree, const octomap_vpp::RoiOcTreeNode *node) { return tree.isNodeROI(node); };
     auto isOcc = [](const octomap_vpp::RoiOcTree &tree, const octomap_vpp::RoiOcTreeNode *node) { return node->getLogOdds() > 0; };
@@ -180,7 +208,7 @@ int main(int argc, char **argv)
     }
 
     pcl::PointCloud<pcl::PointXYZ>::Ptr pcl_cloud = octomap_vpp::octomapToPcl<octomap_vpp::RoiOcTree, pcl::PointXYZ>(*roiTree, isOcc);
-    ROS_INFO_STREAM(pcl_cloud->size());
+    ROS_INFO_STREAM(pcl_cloud->size());*/
 
     tree_mtx.unlock();
 
