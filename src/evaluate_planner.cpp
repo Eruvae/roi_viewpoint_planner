@@ -90,17 +90,41 @@ int main(int argc, char **argv)
     ROS_ERROR("Planning tree resolution not found, make sure the planner is started");
     return -1;
   }
+  std::stringstream resolution_sstr;
+  resolution_sstr << tree_resolution;
+  std::string resolution_str = resolution_sstr.str();
+
+  ROS_INFO_STREAM("Resolution string: " << resolution_str);
+
+  std::string world_name;
+  if (!nh.getParam("/world_name", world_name))
+  {
+    ROS_ERROR("World name not specified; cannot load ground truth");
+    return -1;
+  }
+
+  const std::vector<std::string> mode_list = {"idle", "automatic", "roi_centers", "roi_contours", "contours", "border", "roi_adjacent"};
+  const std::string planning_mode_str = nhp.param<std::string>("planning_mode", "automatic");
+  auto mode_it = std::find(mode_list.begin(), mode_list.end(), planning_mode_str);
+  if (mode_it == mode_list.end())
+  {
+    ROS_ERROR("Specified planning mode not recognized");
+    return -1;
+  }
+  const int planning_mode = mode_it - mode_list.begin();
+
+  ROS_INFO_STREAM("Planning mode num: " << planning_mode);
 
   roiTree = new octomap_vpp::RoiOcTree(tree_resolution);
 
-  std::string gt_file = nhp.param<std::string>("gt", package_path + "/cfg/gt_w18.yaml");
+  std::string gt_file = package_path + "/cfg/world_roi_gts/" + world_name + "_roi_gt.yaml";
 
   ROS_INFO_STREAM("Reading ground truth");
   std::ifstream gt_ifs(gt_file);
 
   if (!gt_ifs.is_open())
   {
-    ROS_INFO_STREAM("Could not open file " << gt_file);
+    ROS_INFO_STREAM("Could not open ground truth file " << gt_file);
     return -1;
   }
 
@@ -138,7 +162,8 @@ int main(int argc, char **argv)
   ROS_INFO_STREAM("BB ROI key count: " << gtRoiKeys.size());
 
   // Read GT octree
-  octomap::OcTree gt_tree("gt_tree_world14.bt");
+  std::string gt_octree_file = package_path + "/cfg/world_gt_octrees/gt_tree_" + world_name + "_" + resolution_str + ".bt";
+  octomap::OcTree gt_tree(gt_octree_file);
   gt_tree.expand(); // for key computations to work
   octomap::KeySet gt_tree_keys;
 
@@ -171,7 +196,7 @@ int main(int argc, char **argv)
   }
   config.activate_execution = true;
   config.require_execution_confirmation = false;
-  config.mode = roi_viewpoint_planner::Planner_SAMPLE_AUTOMATIC;
+  config.mode = planning_mode;
   if (!configClient.setConfiguration(config))
   {
     ROS_ERROR("Applying configuration not successful");
