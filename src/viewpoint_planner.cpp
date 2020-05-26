@@ -1,5 +1,6 @@
 #include "viewpoint_planner.h"
 
+#include <std_msgs/Bool.h>
 #include <std_srvs/Trigger.h>
 #include "octomap_vpp/marching_cubes.h"
 
@@ -18,7 +19,9 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, co
   kinematic_state(new robot_state::RobotState(kinematic_model)),
   mode(IDLE),
   execute_plan(false),
-  robotIsMoving(false)
+  robotIsMoving(false),
+  occupancyScanned(false),
+  roiScanned(false)
 {
   octomapPub = nh.advertise<octomap_msgs::Octomap>("octomap", 1);
   inflatedOctomapPub = nh.advertise<octomap_msgs::Octomap>("inflated_octomap", 1);
@@ -29,6 +32,8 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, co
   poseArrayPub = nh.advertise<geometry_msgs::PoseArray>("vp_array", 1);
   workspaceTreePub = nh.advertise<octomap_msgs::Octomap>("workspace_tree", 1, true);
   cubeVisPub = nh.advertise<visualization_msgs::Marker>("cube_vis", 1);
+
+  plannerStatePub = nhp.advertise<roi_viewpoint_planner::PlannerState>("planner_state", 1, true);
 
   requestExecutionConfirmation = nhp.serviceClient<std_srvs::Trigger>("request_execution_confirmation");
 
@@ -165,15 +170,14 @@ void ViewpointPlanner::publishMap()
 
 void ViewpointPlanner::registerNewScan(const sensor_msgs::PointCloud2ConstPtr &pc_msg)
 {
-  if (robotIsMoving.load() == true)
+  if (!insert_occ_while_moving && robotIsMoving.load())
   {
-    ROS_INFO_STREAM("Robot is currently moving, not inserting scans");
+    ROS_INFO_STREAM("Robot is currently moving, not inserting occupancy");
     return;
   }
 
   ros::Time cbStartTime = ros::Time::now();
   geometry_msgs::TransformStamped pcFrameTf;
-  static Eigen::Affine3d lastCamPose;
 
   try
   {
@@ -186,15 +190,17 @@ void ViewpointPlanner::registerNewScan(const sensor_msgs::PointCloud2ConstPtr &p
   }
   //ROS_INFO_STREAM("Transform for time " << pc_msg->header.stamp << " successful");
 
-  Eigen::Affine3d camPoseEigen = tf2::transformToEigen(pcFrameTf.transform);
-
-  if (camPoseEigen.isApprox(lastCamPose, 1e-2))
+  if (!insert_occ_if_not_moved) // check if robot has moved since last update
   {
-      ROS_INFO("Arm has not moved, not processing pointcloud");
-      return;
-  }
-
-  lastCamPose = camPoseEigen;
+    Eigen::Affine3d camPoseEigen = tf2::transformToEigen(pcFrameTf.transform);
+    static Eigen::Affine3d lastCamPose;
+    if (camPoseEigen.isApprox(lastCamPose, 1e-2))
+    {
+        ROS_INFO("Arm has not moved, not inserting occupancy");
+        return;
+    }
+    lastCamPose = camPoseEigen;
+ }
 
   const geometry_msgs::Vector3 &pcfOrig = pcFrameTf.transform.translation;
   octomap::point3d scan_orig(pcfOrig.x, pcfOrig.y, pcfOrig.z);
@@ -216,6 +222,13 @@ void ViewpointPlanner::registerNewScan(const sensor_msgs::PointCloud2ConstPtr &p
   tree_mtx.lock();
   planningTree.insertPointCloud(pc, scan_orig);
   tree_mtx.unlock();
+
+  occupancyScanned.store(true);
+  if (publish_planning_state)
+  {
+    state.occupancy_scanned = true;
+    plannerStatePub.publish(state);
+  }
 
   ros::Time insertTime = ros::Time::now();
 
@@ -281,19 +294,52 @@ void ViewpointPlanner::pointCloud2ToOctomapByIndices(const sensor_msgs::PointClo
 
 void ViewpointPlanner::registerRoiPCL(const pointcloud_roi_msgs::PointcloudWithRoi &roi)
 {
-  if (robotIsMoving.load() == true)
+  if (!insert_roi_while_moving && robotIsMoving.load())
   {
-    ROS_INFO_STREAM("Robot is currently moving, not inserting scans");
+    ROS_INFO_STREAM("Robot is currently moving, not inserting ROI");
     return;
   }
 
+  geometry_msgs::TransformStamped pcFrameTf;
+  try
+  {
+    pcFrameTf = tfBuffer.lookupTransform(MAP_FRAME, roi.cloud.header.frame_id, roi.cloud.header.stamp);
+  }
+  catch (const tf2::TransformException &e)
+  {
+    ROS_ERROR_STREAM("Couldn't find transform to map frame: " << e.what());
+    return;
+  }
+
+  if (!insert_roi_if_not_moved) // check if robot has moved since last update
+  {
+    Eigen::Affine3d camPoseEigen = tf2::transformToEigen(pcFrameTf.transform);
+    static Eigen::Affine3d lastCamPose;
+    if (camPoseEigen.isApprox(lastCamPose, 1e-2))
+    {
+        ROS_INFO("Arm has not moved, not inserting ROI");
+        return;
+    }
+    lastCamPose = camPoseEigen;
+ }
+
+  sensor_msgs::PointCloud2 pc_glob;
+  tf2::doTransform(roi.cloud, pc_glob, pcFrameTf);
+
   octomap::Pointcloud inlierCloud, outlierCloud;
-  pointCloud2ToOctomapByIndices(roi.cloud, roi.roi_indices, inlierCloud, outlierCloud);
+  pointCloud2ToOctomapByIndices(pc_glob, roi.roi_indices, inlierCloud, outlierCloud);
   //ROS_INFO_STREAM("Cloud sizes: " << inlierCloud.size() << ",  " << outlierCloud.size());
 
   tree_mtx.lock();
   planningTree.insertRegionScan(inlierCloud, outlierCloud);
   tree_mtx.unlock();
+
+  roiScanned.store(true);
+  if (publish_planning_state)
+  {
+    state.roi_scanned = true;
+    plannerStatePub.publish(state);
+  }
 
   //std::vector<octomap::OcTreeKey> roi_keys = testTree.getRoiKeys();
   //ROS_INFO_STREAM("Found " << testTree.getRoiSize() << " ROI keys (" << testTree.getAddedRoiSize() << " added, " << testTree.getDeletedRoiSize() << " removed)");
@@ -301,6 +347,38 @@ void ViewpointPlanner::registerRoiPCL(const pointcloud_roi_msgs::PointcloudWithR
 
 void ViewpointPlanner::registerRoi(const sensor_msgs::PointCloud2ConstPtr &pc_msg, const instance_segmentation_msgs::DetectionsConstPtr &dets_msg)
 {
+  if (!insert_roi_while_moving && robotIsMoving.load())
+  {
+    ROS_INFO_STREAM("Robot is currently moving, not inserting ROI");
+    return;
+  }
+
+  geometry_msgs::TransformStamped pcFrameTf;
+  try
+  {
+    pcFrameTf = tfBuffer.lookupTransform(MAP_FRAME, pc_msg->header.frame_id, pc_msg->header.stamp);
+  }
+  catch (const tf2::TransformException &e)
+  {
+    ROS_ERROR_STREAM("Couldn't find transform to map frame: " << e.what());
+    return;
+  }
+
+  if (!insert_roi_if_not_moved) // check if robot has moved since last update
+  {
+    Eigen::Affine3d camPoseEigen = tf2::transformToEigen(pcFrameTf.transform);
+    static Eigen::Affine3d lastCamPose;
+    if (camPoseEigen.isApprox(lastCamPose, 1e-2))
+    {
+        ROS_INFO("Arm has not moved, not inserting ROI");
+        return;
+    }
+    lastCamPose = camPoseEigen;
+  }
+
+  sensor_msgs::PointCloud2 pc_glob;
+  tf2::doTransform(*pc_msg, pc_glob, pcFrameTf);
+
   //ROS_INFO_STREAM("Register ROI called, " << dets_msg->detections.size() << " detections");
   std::unordered_set<size_t> inlier_indices;
   for (const auto &det : dets_msg->detections)
@@ -323,12 +401,19 @@ void ViewpointPlanner::registerRoi(const sensor_msgs::PointCloud2ConstPtr &pc_ms
   //ROS_INFO_STREAM("Number of inliers: " << inlier_indices.size());
 
   octomap::Pointcloud inlierCloud, outlierCloud;
-  pointCloud2ToOctomapByIndices(*pc_msg, inlier_indices, inlierCloud, outlierCloud);
+  pointCloud2ToOctomapByIndices(pc_glob, inlier_indices, inlierCloud, outlierCloud);
   //ROS_INFO_STREAM("Cloud sizes: " << inlierCloud.size() << ",  " << outlierCloud.size());
 
   tree_mtx.lock();
   planningTree.insertRegionScan(inlierCloud, outlierCloud);
   tree_mtx.unlock();
+
+  roiScanned.store(true);
+  if (publish_planning_state)
+  {
+    state.roi_scanned = true;
+    plannerStatePub.publish(state);
+  }
 }
 
 octomap::point3d ViewpointPlanner::sampleRandomPointOnSphere(const octomap::point3d &center, double radius)
@@ -1277,10 +1362,55 @@ robot_state::RobotStatePtr ViewpointPlanner::sampleNextRobotState(const robot_st
   return maxState;
 }
 
+bool ViewpointPlanner::moveToPoseCartesian(moveit::planning_interface::MoveGroupInterface &manipulator_group, const geometry_msgs::Pose &goal_pose)
+{
+  std::vector<geometry_msgs::Pose> waypoints;
+  waypoints.push_back(goal_pose);
+  moveit_msgs::RobotTrajectory trajectory;
+  const double eef_step = 0.005;
+  const double jump_threshold = 0.0;
+  double fraction = manipulator_group.computeCartesianPath(waypoints, eef_step, jump_threshold, trajectory);
+  if (fraction > 0.95) // execute plan if at least 95% of goal reached
+  {
+    if (require_execution_confirmation)
+    {
+      std_srvs::Trigger requestExecution;
+      if (!requestExecutionConfirmation.call(requestExecution) || !requestExecution.response.success)
+      {
+        ROS_INFO_STREAM("Plan execution denied");
+        return false;
+      }
+    }
+    moveit::planning_interface::MoveGroupInterface::Plan plan;
+    plan.trajectory_= trajectory;
+    robotIsMoving.store(true);
+    occupancyScanned.store(false);
+    roiScanned.store(false);
+    if (publish_planning_state)
+    {
+      state.robot_is_moving = true;
+      state.occupancy_scanned = false;
+      state.roi_scanned = false;
+      plannerStatePub.publish(state);
+    }
+
+    manipulator_group.execute(plan);
+    robotIsMoving.store(false);
+    if (publish_planning_state)
+    {
+      state.robot_is_moving = false;
+      plannerStatePub.publish(state);
+    }
+
+  }
+  return true;
+}
+
 bool ViewpointPlanner::moveToPose(moveit::planning_interface::MoveGroupInterface &manipulator_group, const geometry_msgs::Pose &goal_pose)
 {
   manipulator_group.setPoseReferenceFrame("world");
   manipulator_group.setPlannerId("TRRTkConfigDefault");
+  manipulator_group.setPlanningTime(5);
   ros::Time setTargetTime = ros::Time::now();
   if (!manipulator_group.setJointValueTarget(goal_pose, "camera_link"))
   {
@@ -1307,8 +1437,22 @@ bool ViewpointPlanner::moveToPose(moveit::planning_interface::MoveGroupInterface
       }
     }
     robotIsMoving.store(true);
+    occupancyScanned.store(false);
+    roiScanned.store(false);
+    if (publish_planning_state)
+    {
+      state.robot_is_moving = true;
+      state.occupancy_scanned = false;
+      state.roi_scanned = false;
+      plannerStatePub.publish(state);
+    }
     manipulator_group.execute(plan);
     robotIsMoving.store(false);
+    if (publish_planning_state)
+    {
+      state.robot_is_moving = false;
+      plannerStatePub.publish(state);
+    }
   }
   else
   {
@@ -1317,7 +1461,7 @@ bool ViewpointPlanner::moveToPose(moveit::planning_interface::MoveGroupInterface
   return success;
 }
 
-bool ViewpointPlanner::moveToState(moveit::planning_interface::MoveGroupInterface &manipulator_group, const robot_state::RobotState &goal_state)
+bool ViewpointPlanner::moveToState(const robot_state::RobotState &goal_state, bool async)
 {
   manipulator_group.setJointValueTarget(goal_state);
 
@@ -1326,7 +1470,10 @@ bool ViewpointPlanner::moveToState(moveit::planning_interface::MoveGroupInterfac
 
   if (success)
   {
-    manipulator_group.asyncExecute(plan);
+    if (async)
+      manipulator_group.asyncExecute(plan);
+    else
+      manipulator_group.execute(plan);
   }
   else
   {
@@ -1335,7 +1482,7 @@ bool ViewpointPlanner::moveToState(moveit::planning_interface::MoveGroupInterfac
   return success;
 }
 
-bool ViewpointPlanner::moveToState(const std::vector<double> &joint_values)
+bool ViewpointPlanner::moveToState(const std::vector<double> &joint_values, bool async)
 {
   kinematic_state->setJointGroupPositions(joint_model_group, joint_values);
   manipulator_group.setJointValueTarget(*kinematic_state);
@@ -1345,7 +1492,10 @@ bool ViewpointPlanner::moveToState(const std::vector<double> &joint_values)
 
   if (success)
   {
-    manipulator_group.asyncExecute(plan);
+    if (async)
+      manipulator_group.asyncExecute(plan);
+    else
+      manipulator_group.execute(plan);
   }
   else
   {
@@ -1384,7 +1534,7 @@ bool ViewpointPlanner::saveROIsAsObj(const std::string &file_name)
 
 void ViewpointPlanner::plannerLoop()
 {
-  for (ros::Rate rate(1); ros::ok(); rate.sleep())
+  for (ros::Rate rate(100); ros::ok(); rate.sleep())
   {
     /*std::vector<double> mg_joint_values = manipulator_group.getCurrentJointValues();
     kinematic_state->setJointGroupPositions(joint_model_group, mg_joint_values);
@@ -1393,6 +1543,9 @@ void ViewpointPlanner::plannerLoop()
     auto translation = stateTf.translation();
     auto quaternion = Eigen::Quaterniond(stateTf.linear()).coeffs();
     octomap::pose6d viewpoint(octomap::point3d(translation[0], translation[1], translation[2]), octomath::Quaternion(quaternion[0], quaternion[1], quaternion[2], quaternion[3]));*/
+
+    if ((wait_for_occ_scan && !occupancyScanned.load()) || (wait_for_roi_scan && !roiScanned.load()))
+      continue;
 
     publishMap();
 
@@ -1543,7 +1696,7 @@ void ViewpointPlanner::plannerLoop()
       geometry_msgs::Pose pose;
       pose.position = octomap::pointOctomapToMsg(vp.point);
       pose.orientation = tf2::toMsg(vp.orientation);
-      if (moveToPose(manipulator_group, pose))
+      if (moveToPoseCartesian(manipulator_group, pose))
       {
         break;
       }

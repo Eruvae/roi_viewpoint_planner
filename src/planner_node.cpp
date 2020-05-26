@@ -75,6 +75,34 @@ void reconfigureCallback(roi_viewpoint_planner::PlannerConfig &config, uint32_t 
       config.sensor_min_range = planner->sensor_min_range;
     }
   }
+  if (level & (1 << 5))
+  {
+    planner->insert_occ_if_not_moved = config.insert_occ_if_not_moved;
+  }
+  if (level & (1 << 6))
+  {
+    planner->insert_roi_if_not_moved = config.insert_roi_if_not_moved;
+  }
+  if (level & (1 << 7))
+  {
+    planner->insert_occ_while_moving = config.insert_occ_while_moving;
+  }
+  if (level & (1 << 8))
+  {
+    planner->insert_roi_while_moving = config.insert_roi_while_moving;
+  }
+  if (level & (1 << 0))
+  {
+    planner->wait_for_occ_scan = config.wait_for_occ_scan;
+  }
+  if (level & (1 << 10))
+  {
+    planner->wait_for_roi_scan = config.wait_for_occ_scan;
+  }
+  if (level & (1 << 11))
+  {
+    planner->publish_planning_state = config.publish_planning_state;
+  }
 }
 
 int main(int argc, char **argv)

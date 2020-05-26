@@ -54,6 +54,7 @@ namespace std {
 #include <octomap_vpp/WorkspaceOcTree.h>
 #include <octomap_vpp/roioctree_utils.h>
 
+#include <roi_viewpoint_planner/PlannerState.h>
 //#include "sample.h"
 #include "compute_cubes.h"
 
@@ -84,6 +85,8 @@ private:
   ros::Publisher cubeVisPub;
   //ros::Publisher planningScenePub;
 
+  ros::Publisher plannerStatePub;
+
   ros::ServiceClient requestExecutionConfirmation;
 
   boost::mutex tree_mtx;
@@ -108,6 +111,10 @@ private:
   robot_state::RobotStatePtr kinematic_state;
 
   std::atomic_bool robotIsMoving;
+  std::atomic_bool occupancyScanned;
+  std::atomic_bool roiScanned;
+
+  roi_viewpoint_planner::PlannerState state;
 
   std::default_random_engine random_engine;
 
@@ -130,10 +137,14 @@ public:
   bool execute_plan;
   bool require_execution_confirmation;
 
-  double sensor_min_range;
-  double sensor_max_range;
-  double sensor_hfov;
-  double sensor_vfov;
+  double sensor_min_range, sensor_max_range;
+  //double sensor_hfov;
+  //double sensor_vfov;
+
+  bool insert_occ_if_not_moved, insert_roi_if_not_moved;
+  bool insert_occ_while_moving, insert_roi_while_moving;
+  bool wait_for_occ_scan, wait_for_roi_scan;
+  bool publish_planning_state;
 
   // Planner parameters end
 
@@ -152,6 +163,7 @@ public:
 
   //void publishOctomapToPlanningScene(const octomap_msgs::Octomap &map_msg);
   void publishMap();
+
   void registerNewScan(const sensor_msgs::PointCloud2ConstPtr &pc_msg);
 
   void pointCloud2ToOctomapByIndices(const sensor_msgs::PointCloud2 &cloud, const std::unordered_set<size_t> &indices,  octomap::Pointcloud &inlierCloud, octomap::Pointcloud &outlierCloud);
@@ -219,11 +231,13 @@ public:
 
   robot_state::RobotStatePtr sampleNextRobotState(const robot_state::JointModelGroup *joint_model_group, const robot_state::RobotState &current_state);
 
+  bool moveToPoseCartesian(moveit::planning_interface::MoveGroupInterface &manipulator_group, const geometry_msgs::Pose &goal_pose);
+
   bool moveToPose(moveit::planning_interface::MoveGroupInterface &manipulator_group, const geometry_msgs::Pose &goal_pose);
 
-  bool moveToState(const std::vector<double> &joint_values);
+  bool moveToState(const std::vector<double> &joint_values, bool async = false);
 
-  bool moveToState(moveit::planning_interface::MoveGroupInterface &manipulator_group, const robot_state::RobotState &goal_state);
+  bool moveToState(const robot_state::RobotState &goal_state, bool async = false);
 
   bool saveTreeAsObj(const std::string &file_name);
 
