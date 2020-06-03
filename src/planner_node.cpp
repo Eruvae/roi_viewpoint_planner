@@ -75,33 +75,45 @@ void reconfigureCallback(roi_viewpoint_planner::PlannerConfig &config, uint32_t 
       config.sensor_min_range = planner->sensor_min_range;
     }
   }
-  if (level & (1 << 5))
+  if (level & (1 << 5)) // insert_occ_if_not_moved
   {
     planner->insert_occ_if_not_moved = config.insert_occ_if_not_moved;
   }
-  if (level & (1 << 6))
+  if (level & (1 << 6)) // insert_roi_if_not_moved
   {
     planner->insert_roi_if_not_moved = config.insert_roi_if_not_moved;
   }
-  if (level & (1 << 7))
+  if (level & (1 << 7)) // insert_occ_while_moving
   {
     planner->insert_occ_while_moving = config.insert_occ_while_moving;
   }
-  if (level & (1 << 8))
+  if (level & (1 << 8)) // insert_roi_while_moving
   {
     planner->insert_roi_while_moving = config.insert_roi_while_moving;
   }
-  if (level & (1 << 0))
+  if (level & (1 << 9)) // wait_for_occ_scan
   {
     planner->wait_for_occ_scan = config.wait_for_occ_scan;
   }
-  if (level & (1 << 10))
+  if (level & (1 << 10)) // wait_for_roi_scan
   {
     planner->wait_for_roi_scan = config.wait_for_occ_scan;
   }
-  if (level & (1 << 11))
+  if (level & (1 << 11)) // publish_planning_state
   {
     planner->publish_planning_state = config.publish_planning_state;
+  }
+  if (level & (1 << 12)) // planner
+  {
+    planner->planner_id = config.planner;
+  }
+  if (level & (1 << 13)) // planning_time
+  {
+    planner->planning_time = config.planning_time;
+  }
+  if (level & (1 << 14)) // use_cartesian_motion
+  {
+    planner->use_cartesian_motion = config.use_cartesian_motion;
   }
 }
 

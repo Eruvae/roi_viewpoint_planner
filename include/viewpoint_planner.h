@@ -146,6 +146,11 @@ public:
   bool wait_for_occ_scan, wait_for_roi_scan;
   bool publish_planning_state;
 
+  std::string planner_id;
+  double planning_time;
+
+  bool use_cartesian_motion;
+
   // Planner parameters end
 
   struct Viewpoint

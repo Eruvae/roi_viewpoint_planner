@@ -1408,9 +1408,9 @@ bool ViewpointPlanner::moveToPoseCartesian(moveit::planning_interface::MoveGroup
 
 bool ViewpointPlanner::moveToPose(moveit::planning_interface::MoveGroupInterface &manipulator_group, const geometry_msgs::Pose &goal_pose)
 {
-  manipulator_group.setPoseReferenceFrame("world");
-  manipulator_group.setPlannerId("TRRTkConfigDefault");
-  manipulator_group.setPlanningTime(5);
+  manipulator_group.setPoseReferenceFrame(MAP_FRAME);
+  manipulator_group.setPlannerId(planner_id);
+  manipulator_group.setPlanningTime(planning_time);
   ros::Time setTargetTime = ros::Time::now();
   if (!manipulator_group.setJointValueTarget(goal_pose, "camera_link"))
   {
@@ -1696,9 +1696,15 @@ void ViewpointPlanner::plannerLoop()
       geometry_msgs::Pose pose;
       pose.position = octomap::pointOctomapToMsg(vp.point);
       pose.orientation = tf2::toMsg(vp.orientation);
-      if (moveToPoseCartesian(manipulator_group, pose))
+      if (use_cartesian_motion)
       {
-        break;
+        if (moveToPoseCartesian(manipulator_group, pose))
+          break;
+      }
+      else
+      {
+        if (moveToPose(manipulator_group, pose))
+          break;
       }
     }
   }
