@@ -35,6 +35,8 @@ find_package(octomap REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(YAMLCPP yaml-cpp REQUIRED)
 
+find_package(PCL REQUIRED)
+
 ## Uncomment this if the package has a setup.py. This macro ensures
 ## modules and global scripts declared therein get installed
 ## See http://ros.org/doc/api/catkin/html/user_guide/setup_dot_py.html
@@ -110,6 +112,7 @@ generate_messages(
 # )
 generate_dynamic_reconfigure_options(
     cfg/Planner.cfg
+    cfg/Evaluator.cfg
 )
 
 ###################################
@@ -139,7 +142,16 @@ include_directories(
   ${catkin_INCLUDE_DIRS}
   ${OCTOMAP_INCLUDE_DIRS}
   ${YAMLCPP_INCLUDE_DIRS}
+  ${PCL_INCLUDE_DIRS}
   ${dynamic_reconfigure_PACKAGE_PATH}/cmake/cfgbuild.cmake
+)
+
+link_directories(
+  ${PCL_LIBRARY_DIRS}
+)
+
+add_definitions(
+  ${PCL_DEFINITIONS}
 )
 
 ## Declare a C++ library
@@ -178,7 +190,7 @@ add_dependencies(generate_gt_octree ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin
 #   ${catkin_LIBRARIES}
 # )
 target_link_libraries(planner_node ${catkin_LIBRARIES} ${OCTOMAP_LIBRARIES})
-target_link_libraries(evaluate_planner ${catkin_LIBRARIES} ${OCTOMAP_LIBRARIES} ${YAMLCPP_LIBRARIES})
+target_link_libraries(evaluate_planner ${catkin_LIBRARIES} ${OCTOMAP_LIBRARIES} ${YAMLCPP_LIBRARIES} ${PCL_LIBRARIES})
 target_link_libraries(generate_gt_octree ${catkin_LIBRARIES} ${OCTOMAP_LIBRARIES} ${YAMLCPP_LIBRARIES})
 
 #############

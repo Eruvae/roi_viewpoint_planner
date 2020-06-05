@@ -13,9 +13,19 @@
 #include <boost/numeric/ublas/matrix.hpp>
 #include <octomap_vpp/marching_cubes.h>
 #include <octomap_vpp/octomap_pcl.h>
+#include <pcl/segmentation/extract_clusters.h>
+#include <pcl/segmentation/region_growing.h>
+#include <pcl/features/normal_3d.h>
+#include <pcl/filters/extract_indices.h>
+#include <pcl/surface/convex_hull.h>
+#include <pcl/visualization/pcl_visualizer.h>
 #include "compute_cubes.h"
+#include "point_cloud_color_handler_clusters.h"
 
 namespace ublas = boost::numeric::ublas;
+
+pcl::visualization::PCLVisualizer *viewer = nullptr;
+boost::mutex viewer_mtx;
 
 octomap_vpp::RoiOcTree* roiTree;
 boost::mutex tree_mtx;
@@ -73,6 +83,17 @@ struct IndexPair
   size_t det_ind;
 };
 
+
+void visualizeLoop()
+{
+  viewer = new pcl::visualization::PCLVisualizer("ROI viewer");
+  for (ros::Rate rate(30); ros::ok(); rate.sleep())
+  {
+    viewer_mtx.lock();
+    viewer->spinOnce();
+    viewer_mtx.unlock();
+  }
+}
 
 int main(int argc, char **argv)
 {
@@ -181,6 +202,10 @@ int main(int argc, char **argv)
 
   ros::Subscriber octomap_sub = nh.subscribe("/octomap", 10, octomapCallback);
 
+  // PCL visualization init
+
+  boost::thread visualizeThread(visualizeLoop);
+
   // Activate planner
 
   dynamic_reconfigure::Client<roi_viewpoint_planner::PlannerConfig> configClient("/roi_viewpoint_planner");
@@ -235,7 +260,101 @@ int main(int argc, char **argv)
     pcl::PointCloud<pcl::PointXYZ>::Ptr pcl_cloud = octomap_vpp::octomapToPcl<octomap_vpp::RoiOcTree, pcl::PointXYZ>(*roiTree, isOcc);
     ROS_INFO_STREAM(pcl_cloud->size());*/
 
+    auto isRoi = [](const octomap_vpp::RoiOcTree &tree, const octomap_vpp::RoiOcTreeNode *node) { return tree.isNodeROI(node); };
+    pcl::PointCloud<pcl::PointXYZ>::Ptr roi_pcl = octomap_vpp::octomapToPcl<octomap_vpp::RoiOcTree, pcl::PointXYZ>(*roiTree, isRoi);
+    pcl::PointCloud<pcl::Normal>::Ptr normal_cloud(new pcl::PointCloud<pcl::Normal>);
+
     tree_mtx.unlock();
+
+
+    // PCL computations
+    std::vector<pcl::PointIndices> clusters;
+    if (!roi_pcl->empty())
+    {
+      pcl::search::KdTree<pcl::PointXYZ>::Ptr tree (new pcl::search::KdTree<pcl::PointXYZ>);
+      tree->setInputCloud(roi_pcl);
+
+      pcl::NormalEstimation<pcl::PointXYZ, pcl::Normal> ne;
+      ne.setInputCloud(roi_pcl);
+      ne.setSearchMethod(tree);
+      ne.setRadiusSearch(0.03);
+      ne.compute(*normal_cloud);
+
+      /*pcl::RegionGrowing<pcl::PointXYZ, pcl::Normal> rg;
+      rg.setInputCloud(roi_pcl);
+      rg.setSearchMethod(tree);
+      rg.setInputNormals(normal_cloud);
+      rg.setMinClusterSize(5);
+      rg.setMaxClusterSize(400);
+      rg.setSmoothnessThreshold(30.0f / 180.0f * M_PI);
+      rg.setCurvatureThreshold(0.05f);
+      rg.extract(clusters);*/
+
+      pcl::EuclideanClusterExtraction<pcl::PointXYZ> ec;
+      ec.setClusterTolerance (0.03);
+      ec.setMinClusterSize (5);
+      ec.setMaxClusterSize (400);
+      ec.setSearchMethod (tree);
+      ec.setInputCloud (roi_pcl);
+      ec.extract (clusters);
+
+      if (viewer && !clusters.empty())
+      {
+        viewer_mtx.lock();
+        viewer->removeAllPointClouds();
+        viewer->removeAllShapes();
+        viewer_mtx.unlock();
+      }
+
+      size_t i = 0;
+      for (const pcl::PointIndices &cluster : clusters)
+      {
+        pcl::PointIndicesPtr cluster_ptr(new pcl::PointIndices(cluster));
+        pcl::PointCloud<pcl::PointXYZ>::Ptr cluster_cloud(new pcl::PointCloud<pcl::PointXYZ>);
+        pcl::PointCloud<pcl::PointXYZ>::Ptr hull_cloud(new pcl::PointCloud<pcl::PointXYZ>);
+        std::vector<pcl::Vertices> hull_polygons;
+
+        pcl::ExtractIndices<pcl::PointXYZ> extr_inds;
+        extr_inds.setInputCloud(roi_pcl);
+        extr_inds.setIndices(cluster_ptr);
+        extr_inds.filter(*cluster_cloud);
+
+        pcl::ConvexHull<pcl::PointXYZ> hull;
+        hull.setInputCloud(cluster_cloud);
+        //hull.setIndices(cluster_ptr);
+        hull.setComputeAreaVolume(true);
+
+        hull.reconstruct(*hull_cloud, hull_polygons);
+        int dim = hull.getDimension();
+        double vol = hull.getTotalVolume() * 1000000; // to cm3
+        ROS_INFO_STREAM("Hull dimension: " << dim << "Cluster volume: " << vol);
+
+        if (viewer && !roi_pcl->empty())
+        {
+          viewer_mtx.lock();
+          std::string name = "Cluster " + i;
+          viewer->addPolygonMesh<pcl::PointXYZ>(hull_cloud, hull_polygons, name);
+          viewer_mtx.unlock();
+        }
+        i++;
+      }
+    }
+    else
+    {
+      ROS_WARN("PCL cloud was emtpy; no clustering performed");
+    }
+
+    ROS_INFO_STREAM("Number of clusters: " << clusters.size());
+
+    // Debug view pointcloud
+    if (viewer && !roi_pcl->empty())
+    {
+      pcl::visualization::PointCloudColorHandlerClusters<pcl::PointXYZ> roi_color_handler(roi_pcl, clusters);
+      viewer_mtx.lock();
+      viewer->addPointCloud<pcl::PointXYZ> (roi_pcl, roi_color_handler, "roi_cloud");
+      //viewer->addPointCloudNormals<pcl::PointXYZ, pcl::Normal> (roi_pcl, normal_cloud, 1, 0.02f, "roi_normals");
+      viewer_mtx.unlock();
+    }
 
     ros::Time currentTime = ros::Time::now();
 
