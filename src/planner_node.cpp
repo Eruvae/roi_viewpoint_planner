@@ -105,15 +105,23 @@ void reconfigureCallback(roi_viewpoint_planner::PlannerConfig &config, uint32_t 
   }
   if (level & (1 << 12)) // planner
   {
-    planner->planner_id = config.planner;
+    planner->setPlannerId(config.planner);
   }
   if (level & (1 << 13)) // planning_time
   {
-    planner->planning_time = config.planning_time;
+    planner->setPlanningTime(config.planning_time);
   }
   if (level & (1 << 14)) // use_cartesian_motion
   {
     planner->use_cartesian_motion = config.use_cartesian_motion;
+  }
+  if (level & (1 << 15)) // compute_ik_when_sampling
+  {
+    planner->compute_ik_when_sampling = config.compute_ik_when_sampling;
+  }
+  if (level & (1 << 16)) // velocity_scaling
+  {
+    planner->setMaxVelocityScalingFactor(config.velocity_scaling);
   }
 }
 

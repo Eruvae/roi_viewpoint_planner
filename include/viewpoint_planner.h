@@ -150,14 +150,15 @@ public:
   double planning_time;
 
   bool use_cartesian_motion;
+  bool compute_ik_when_sampling;
 
   // Planner parameters end
 
   struct Viewpoint
   {
-    octomap::point3d point;
+    geometry_msgs::Pose pose;
+    robot_state::RobotStatePtr joint_target;
     octomap::point3d target;
-    tf2::Quaternion orientation;
     double infoGain;
     double distance;
     double utility;
@@ -165,6 +166,28 @@ public:
   };
 
   ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, const std::string &wstree_file, double tree_resolution);
+
+  // Set planner parameters
+
+  void setPoseReferenceFrame(const std::string& pose_reference_frame)
+  {
+    manipulator_group.setPoseReferenceFrame(pose_reference_frame);
+  }
+
+  void setPlannerId(const std::string& planner_id)
+  {
+    manipulator_group.setPlannerId(planner_id);
+  }
+
+  void setPlanningTime(double seconds)
+  {
+    manipulator_group.setPlanningTime(seconds);
+  }
+
+  void setMaxVelocityScalingFactor(double max_velocity_scaling_factor)
+  {
+    manipulator_group.setMaxVelocityScalingFactor(max_velocity_scaling_factor);
+  }
 
   //void publishOctomapToPlanningScene(const octomap_msgs::Octomap &map_msg);
   void publishMap();
@@ -200,8 +223,6 @@ public:
    */
   tf2::Quaternion dirVecToQuat(octomath::Vector3 dirVec, const tf2::Quaternion &camQuat, const tf2::Vector3 &viewDir);
 
-  std::vector<Viewpoint> sampleAroundMultiROICenters(const std::vector<octomap::point3d> &centers, const octomap::point3d &camPos, const tf2::Quaternion &camQuat);
-
   void publishViewpointVisualizations(const std::vector<Viewpoint> &viewpoints, const std::string &ns, const std_msgs::ColorRGBA &color = COLOR_RED);
 
   void sampleAroundROICenter(const octomap::point3d &center,  const octomap::point3d &camPos, const tf2::Quaternion &camQuat, size_t roiID = 0);
@@ -224,9 +245,11 @@ public:
 
   octomap::point3d computeUnknownDir(const octomap::OcTreeKey &key);
 
-  std::vector<Viewpoint> sampleContourPoints(const octomap::point3d &camPos, const tf2::Quaternion &camQuat);
-
   void getFreeNeighbours6(const octomap::OcTreeKey &key, octomap::KeySet &freeKeys);
+
+  std::vector<Viewpoint> sampleAroundMultiROICenters(const std::vector<octomap::point3d> &centers, const octomap::point3d &camPos, const tf2::Quaternion &camQuat);
+
+  std::vector<Viewpoint> sampleContourPoints(const octomap::point3d &camPos, const tf2::Quaternion &camQuat);
 
   std::vector<Viewpoint> sampleRoiContourPoints(const octomap::point3d &camPos, const tf2::Quaternion &camQuat);
 
@@ -236,13 +259,15 @@ public:
 
   robot_state::RobotStatePtr sampleNextRobotState(const robot_state::JointModelGroup *joint_model_group, const robot_state::RobotState &current_state);
 
-  bool moveToPoseCartesian(moveit::planning_interface::MoveGroupInterface &manipulator_group, const geometry_msgs::Pose &goal_pose);
+  bool moveToPoseCartesian(const geometry_msgs::Pose &goal_pose);
 
-  bool moveToPose(moveit::planning_interface::MoveGroupInterface &manipulator_group, const geometry_msgs::Pose &goal_pose);
+  bool moveToPose(const geometry_msgs::Pose &goal_pose);
+
+  bool moveToState(const robot_state::RobotState &goal_state);
+
+  bool moveToStateAsync(const robot_state::RobotState &goal_state);
 
   bool moveToState(const std::vector<double> &joint_values, bool async = false);
-
-  bool moveToState(const robot_state::RobotState &goal_state, bool async = false);
 
   bool saveTreeAsObj(const std::string &file_name);
 
