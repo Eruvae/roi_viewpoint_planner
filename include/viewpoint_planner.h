@@ -55,8 +55,13 @@ namespace std {
 #include <octomap_vpp/roioctree_utils.h>
 
 #include <roi_viewpoint_planner/PlannerState.h>
-//#include "sample.h"
 #include "compute_cubes.h"
+
+#define PUBLISH_PLANNING_TIMES
+
+#ifdef PUBLISH_PLANNING_TIMES
+#include <roi_viewpoint_planner/PlanningTimes.h>
+#endif
 
 // Constants
 
@@ -115,6 +120,12 @@ private:
   std::atomic_bool roiScanned;
 
   roi_viewpoint_planner::PlannerState state;
+
+  #ifdef PUBLISH_PLANNING_TIMES
+  boost::mutex times_mtx;
+  ros::Publisher planningTimesPub;
+  roi_viewpoint_planner::PlanningTimes times;
+  #endif
 
   std::default_random_engine random_engine;
 

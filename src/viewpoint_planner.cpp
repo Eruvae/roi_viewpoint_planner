@@ -35,6 +35,10 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, co
 
   plannerStatePub = nhp.advertise<roi_viewpoint_planner::PlannerState>("planner_state", 1, true);
 
+  #ifdef PUBLISH_PLANNING_TIMES
+  planningTimesPub = nhp.advertise<roi_viewpoint_planner::PlanningTimes>("planning_times", 1, true);
+  #endif
+
   requestExecutionConfirmation = nhp.serviceClient<std_srvs::Trigger>("request_execution_confirmation");
 
   setPoseReferenceFrame(MAP_FRAME);
@@ -178,7 +182,10 @@ void ViewpointPlanner::registerNewScan(const sensor_msgs::PointCloud2ConstPtr &p
     return;
   }
 
-  //ros::Time cbStartTime = ros::Time::now();
+  #ifdef PUBLISH_PLANNING_TIMES
+  ros::Time cbStartTime = ros::Time::now();
+  #endif
+
   geometry_msgs::TransformStamped pcFrameTf;
 
   try
@@ -232,7 +239,15 @@ void ViewpointPlanner::registerNewScan(const sensor_msgs::PointCloud2ConstPtr &p
     plannerStatePub.publish(state);
   }
 
-  //ros::Time insertTime = ros::Time::now();
+  #ifdef PUBLISH_PLANNING_TIMES
+  ros::Time insertTime = ros::Time::now();
+  times_mtx.lock();
+  times.insert_scan_latest = insertTime - cbStartTime;
+  times.num_scans++;
+  times.insert_scan_avg += (times.insert_scan_latest - times.insert_scan_avg) * (1.0 / times.num_scans);
+  planningTimesPub.publish(times);
+  times_mtx.unlock();
+  #endif
 
   //ROS_INFO_STREAM("Timings - TF: " << tfTime - cbStartTime << "; doTF: " << doTFTime - tfTime << "; toOct: " << toOctoTime - doTFTime << "; insert: " << insertTime - toOctoTime);
 }
@@ -302,6 +317,10 @@ void ViewpointPlanner::registerRoiPCL(const pointcloud_roi_msgs::PointcloudWithR
     return;
   }
 
+  #ifdef PUBLISH_PLANNING_TIMES
+  ros::Time cbStartTime = ros::Time::now();
+  #endif
+
   geometry_msgs::TransformStamped pcFrameTf;
   try
   {
@@ -343,6 +362,16 @@ void ViewpointPlanner::registerRoiPCL(const pointcloud_roi_msgs::PointcloudWithR
     plannerStatePub.publish(state);
   }
 
+  #ifdef PUBLISH_PLANNING_TIMES
+  ros::Time insertTime = ros::Time::now();
+  times_mtx.lock();
+  times.insert_roi_latest = insertTime - cbStartTime;
+  times.num_rois++;
+  times.insert_roi_avg += (times.insert_roi_latest - times.insert_roi_avg) * (1.0 / times.num_rois);
+  planningTimesPub.publish(times);
+  times_mtx.unlock();
+  #endif
+
   //std::vector<octomap::OcTreeKey> roi_keys = testTree.getRoiKeys();
   //ROS_INFO_STREAM("Found " << testTree.getRoiSize() << " ROI keys (" << testTree.getAddedRoiSize() << " added, " << testTree.getDeletedRoiSize() << " removed)");
 }
@@ -354,6 +383,10 @@ void ViewpointPlanner::registerRoi(const sensor_msgs::PointCloud2ConstPtr &pc_ms
     //ROS_INFO_STREAM("Robot is currently moving, not inserting ROI");
     return;
   }
+
+  #ifdef PUBLISH_PLANNING_TIMES
+  ros::Time cbStartTime = ros::Time::now();
+  #endif
 
   geometry_msgs::TransformStamped pcFrameTf;
   try
@@ -416,6 +449,16 @@ void ViewpointPlanner::registerRoi(const sensor_msgs::PointCloud2ConstPtr &pc_ms
     state.roi_scanned = true;
     plannerStatePub.publish(state);
   }
+
+  #ifdef PUBLISH_PLANNING_TIMES
+  ros::Time insertTime = ros::Time::now();
+  times_mtx.lock();
+  times.insert_roi_latest = insertTime - cbStartTime;
+  times.num_rois++;
+  times.insert_roi_avg += (times.insert_roi_latest - times.insert_roi_avg) * (1.0 / times.num_rois);
+  planningTimesPub.publish(times);
+  times_mtx.unlock();
+  #endif
 }
 
 octomap::point3d ViewpointPlanner::sampleRandomPointOnSphere(const octomap::point3d &center, double radius)

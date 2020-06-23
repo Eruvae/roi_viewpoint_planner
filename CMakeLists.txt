@@ -70,6 +70,7 @@ find_package(PCL REQUIRED)
 add_message_files(
    FILES
    PlannerState.msg
+   PlanningTimes.msg
 )
 
 ## Generate services in the 'srv' folder
