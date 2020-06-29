@@ -4,9 +4,10 @@
 #include <std_srvs/Trigger.h>
 #include "octomap_vpp/marching_cubes.h"
 
-ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, const std::string &wstree_file, double tree_resolution) :
+ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, const std::string &wstree_file, const std::string &sampling_tree_file, double tree_resolution) :
   planningTree(tree_resolution),
   workspaceTree(NULL),
+  samplingTree(NULL),
   wsMin(-FLT_MAX, -FLT_MAX, -FLT_MAX),
   wsMax(FLT_MAX, FLT_MAX, FLT_MAX),
   depthCloudSub(nh, PC_TOPIC, 1),
@@ -93,6 +94,26 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, co
         workspaceTreePub.publish(ws_msg);
       }
     }
+  }
+
+  tree = octomap::AbstractOcTree::read(sampling_tree_file);
+  if (!tree)
+  {
+    ROS_ERROR_STREAM("Sampling tree file could not be loaded");
+  }
+  else
+  {
+    samplingTree = dynamic_cast<octomap_vpp::WorkspaceOcTree*>(tree);
+    if (!samplingTree)
+    {
+      ROS_ERROR("Sampling tree must be of type WorkspaceOcTree");
+      delete tree;
+    }
+  }
+
+  if (!samplingTree) // if sampling tree not specified, use workspace octree
+  {
+    samplingTree = workspaceTree;
   }
 
 
@@ -726,7 +747,7 @@ double ViewpointPlanner::computeExpectedRayIGinWorkspace(const octomap::KeyRay &
   for (const octomap::OcTreeKey &key : ray)
   {
     octomap_vpp::RoiOcTreeNode *node = planningTree.search(key);
-    float reachability = workspaceTree ? workspaceTree->getReachability(planningTree.keyToCoord(key)) : 1.f;
+    float reachability = samplingTree ? samplingTree->getReachability(planningTree.keyToCoord(key)) : 1.f;
     if (reachability > 0) reachability = 1.f; // Test: binarize reachability
     if (node == NULL)
     {
@@ -744,7 +765,7 @@ double ViewpointPlanner::computeExpectedRayIGinWorkspace(const octomap::KeyRay &
     }
     /*float logOdds = testTree.keyToLogOdds(key);
     double gain = testTree.computeExpectedInformationGain(logOdds);
-    double reachability = workspaceTree ? workspaceTree->getReachability(planningTree.keyToCoord(key)) : 1.0; // default to 1 if reachability not specified
+    double reachability = samplingTree ? samplingTree->getReachability(planningTree.keyToCoord(key)) : 1.0; // default to 1 if reachability not specified
     //const double RB_WEIGHT = 0.5;
     double weightedGain = reachability * gain;//RB_WEIGHT * reachability + (1 - RB_WEIGHT) * gain;
     expected_gain += weightedGain; // * curProb
@@ -1050,7 +1071,7 @@ std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleContourPoints(c
   std::vector<Viewpoint> sampled_vps;
   for (auto it = planningTree.begin_leafs_bbx(wsMin, wsMax), end = planningTree.end_leafs_bbx(); it != end; it++)
   {
-    if (workspaceTree != NULL && workspaceTree->search(it.getCoordinate()) == NULL) // workspace specified and sampled point not in workspace
+    if (samplingTree != NULL && samplingTree->search(it.getCoordinate()) == NULL) // sampling tree specified and sampled point not in sampling tree
     {
       continue;
     }
@@ -1255,7 +1276,7 @@ std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleRoiAdjecentCoun
 
   for (const octomap::OcTreeKey &key : inflated_roi_keys)
   {
-    if (workspaceTree != NULL && workspaceTree->search(planningTree.keyToCoord(key)) == NULL) // workspace specified and sampled point not in workspace
+    if (samplingTree != NULL && samplingTree->search(planningTree.keyToCoord(key)) == NULL) // sampling tree specified and sampled point not in sampling tree
     {
       continue;
     }

@@ -77,6 +77,7 @@ class ViewpointPlanner
 private:
   octomap_vpp::RoiOcTree planningTree;
   octomap_vpp::WorkspaceOcTree *workspaceTree;
+  octomap_vpp::WorkspaceOcTree *samplingTree;
   octomap::point3d wsMin, wsMax;
   tf2_ros::Buffer tfBuffer;
   tf2_ros::TransformListener tfListener;
@@ -176,7 +177,7 @@ public:
     bool isFree;
   };
 
-  ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, const std::string &wstree_file, double tree_resolution);
+  ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, const std::string &wstree_file, const std::string &sampling_tree_file, double tree_resolution);
 
   // Set planner parameters
 
