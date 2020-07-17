@@ -68,6 +68,7 @@
   <depend>moveit_ros_planning_interface</depend>
   <depend>eigen_conversions</depend>
   <depend>dynamic_reconfigure</depend>
+  <depend>trolley_remote</depend>
 
   <build_depend>message_generation</build_depend>
   <exec_depend>message_runtime</exec_depend>

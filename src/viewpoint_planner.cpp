@@ -4,8 +4,25 @@
 #include <std_srvs/Trigger.h>
 #include "octomap_vpp/marching_cubes.h"
 
-ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, const std::string &wstree_file, const std::string &sampling_tree_file, double tree_resolution) :
+namespace tf2
+{
+template <>
+inline
+  void doTransform(const octomap::point3d& t_in, octomap::point3d& t_out, const geometry_msgs::TransformStamped& transform)
+  {
+    tf2::Transform t;
+    fromMsg(transform.transform, t);
+    tf2::Vector3 v_in(t_in.x(), t_in.y(), t_in.z());
+    tf2::Vector3 v_out = t * v_in;
+    t_out = octomap::point3d(v_out.x(), v_out.y(), v_out.z());
+  }
+}
+
+ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, const std::string &wstree_file, const std::string &sampling_tree_file, double tree_resolution,
+                                   const std::string &map_frame, const std::string &ws_frame) :
   planningTree(tree_resolution),
+  map_frame(map_frame),
+  ws_frame(ws_frame),
   workspaceTree(NULL),
   samplingTree(NULL),
   wsMin(-FLT_MAX, -FLT_MAX, -FLT_MAX),
@@ -42,7 +59,7 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, co
 
   requestExecutionConfirmation = nhp.serviceClient<std_srvs::Trigger>("request_execution_confirmation");
 
-  setPoseReferenceFrame(MAP_FRAME);
+  setPoseReferenceFrame(map_frame);
 
   // Load workspace
 
@@ -86,7 +103,7 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, co
       }
 
       octomap_msgs::Octomap ws_msg;
-      ws_msg.header.frame_id = "world";
+      ws_msg.header.frame_id = ws_frame;
       ws_msg.header.stamp = ros::Time::now();
       bool msg_generated = octomap_msgs::fullMapToMsg(*workspaceTree, ws_msg);
       if (msg_generated)
@@ -130,7 +147,7 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, co
     manipulator_group.setWorkspace(wsMin.x(), wsMin.y(), wsMin.z(), wsMax.x(), wsMax.y(), wsMax.z());
 
     visualization_msgs::Marker ws_cube;
-    ws_cube.header.frame_id = "world";
+    ws_cube.header.frame_id = ws_frame;
     ws_cube.header.stamp = ros::Time::now();
     ws_cube.ns = "ws_cube";
     ws_cube.id = 0;
@@ -160,7 +177,7 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, co
 void ViewpointPlanner::publishMap()
 {
   octomap_msgs::Octomap map_msg;
-  map_msg.header.frame_id = MAP_FRAME;
+  map_msg.header.frame_id = map_frame;
   map_msg.header.stamp = ros::Time::now();
   tree_mtx.lock();
   bool msg_generated = octomap_msgs::fullMapToMsg(planningTree, map_msg);
@@ -186,7 +203,7 @@ void ViewpointPlanner::publishMap()
   if (inflatedTree != nullptr)
   {
     octomap_msgs::Octomap inflated_map;
-    inflated_map.header.frame_id = MAP_FRAME;
+    inflated_map.header.frame_id = map_frame;
     inflated_map.header.stamp = ros::Time::now();
     if (octomap_msgs::fullMapToMsg(*inflatedTree, inflated_map))
     {
@@ -211,7 +228,7 @@ void ViewpointPlanner::registerNewScan(const sensor_msgs::PointCloud2ConstPtr &p
 
   try
   {
-    pcFrameTf = tfBuffer.lookupTransform(MAP_FRAME, pc_msg->header.frame_id, pc_msg->header.stamp);
+    pcFrameTf = tfBuffer.lookupTransform(map_frame, pc_msg->header.frame_id, pc_msg->header.stamp);
   }
   catch (const tf2::TransformException &e)
   {
@@ -345,7 +362,7 @@ void ViewpointPlanner::registerRoiPCL(const pointcloud_roi_msgs::PointcloudWithR
   geometry_msgs::TransformStamped pcFrameTf;
   try
   {
-    pcFrameTf = tfBuffer.lookupTransform(MAP_FRAME, roi.cloud.header.frame_id, roi.cloud.header.stamp);
+    pcFrameTf = tfBuffer.lookupTransform(map_frame, roi.cloud.header.frame_id, roi.cloud.header.stamp);
   }
   catch (const tf2::TransformException &e)
   {
@@ -412,7 +429,7 @@ void ViewpointPlanner::registerRoi(const sensor_msgs::PointCloud2ConstPtr &pc_ms
   geometry_msgs::TransformStamped pcFrameTf;
   try
   {
-    pcFrameTf = tfBuffer.lookupTransform(MAP_FRAME, pc_msg->header.frame_id, pc_msg->header.stamp);
+    pcFrameTf = tfBuffer.lookupTransform(map_frame, pc_msg->header.frame_id, pc_msg->header.stamp);
   }
   catch (const tf2::TransformException &e)
   {
@@ -535,12 +552,12 @@ void ViewpointPlanner::publishViewpointVisualizations(const std::vector<Viewpoin
   static std::unordered_map<std::string, size_t> last_marker_counts;
   visualization_msgs::MarkerArray markers;
   geometry_msgs::PoseArray poseArr;
-  poseArr.header.frame_id = "world";
+  poseArr.header.frame_id = map_frame;
   poseArr.header.stamp = ros::Time::now();
   for (size_t i = 0; i < viewpoints.size(); i++)
   {
     visualization_msgs::Marker marker;
-    marker.header.frame_id = "world";
+    marker.header.frame_id = map_frame;
     marker.header.stamp = ros::Time();
     marker.ns = ns;
     marker.id = i;
@@ -562,7 +579,7 @@ void ViewpointPlanner::publishViewpointVisualizations(const std::vector<Viewpoin
     markers.markers.push_back(marker);
 
     visualization_msgs::Marker textMarker;
-    textMarker.header.frame_id = "world";
+    textMarker.header.frame_id = map_frame;
     textMarker.header.stamp = ros::Time();
     textMarker.ns = ns + "_texts";
     textMarker.id = i;
@@ -586,7 +603,7 @@ void ViewpointPlanner::publishViewpointVisualizations(const std::vector<Viewpoin
   for (size_t i = viewpoints.size(); i < last_marker_count; i++)
   {
     visualization_msgs::Marker marker;
-    marker.header.frame_id = "world";
+    marker.header.frame_id = map_frame;
     marker.header.stamp = ros::Time();
     marker.ns = ns;
     marker.id = i;
@@ -594,7 +611,7 @@ void ViewpointPlanner::publishViewpointVisualizations(const std::vector<Viewpoin
     marker.action = visualization_msgs::Marker::DELETE;
     markers.markers.push_back(marker);
     visualization_msgs::Marker textMarker;
-    textMarker.header.frame_id = "world";
+    textMarker.header.frame_id = map_frame;
     textMarker.header.stamp = ros::Time();
     textMarker.ns = ns + "_texts";
     textMarker.id = i;
@@ -676,7 +693,7 @@ void ViewpointPlanner::sampleAroundROICenter(const octomap::point3d &center, con
   for (size_t i = 0; i < sampledPoints.size(); i++)
   {
     visualization_msgs::Marker marker;
-    marker.header.frame_id = "world";
+    marker.header.frame_id = map_frame;
     marker.header.stamp = ros::Time();
     marker.ns = "roiPoints" + roiID;
     marker.id = i;
@@ -702,7 +719,7 @@ void ViewpointPlanner::sampleAroundROICenter(const octomap::point3d &center, con
     markers.markers.push_back(marker);
 
     visualization_msgs::Marker textMarker;
-    textMarker.header.frame_id = "world";
+    textMarker.header.frame_id = map_frame;
     textMarker.header.stamp = ros::Time();
     textMarker.ns = "roiPoints_texts" + roiID;
     textMarker.id = i;
@@ -727,7 +744,7 @@ void ViewpointPlanner::sampleAroundROICenter(const octomap::point3d &center, con
   viewArrowVisPub.publish(markers);
 
   geometry_msgs::PoseArray poseArr;
-  poseArr.header.frame_id = "world";
+  poseArr.header.frame_id = map_frame;
   poseArr.header.stamp = ros::Time::now();
   for (size_t i = 0; i < sampledPoints.size(); i++)
   {
@@ -747,7 +764,7 @@ double ViewpointPlanner::computeExpectedRayIGinWorkspace(const octomap::KeyRay &
   for (const octomap::OcTreeKey &key : ray)
   {
     octomap_vpp::RoiOcTreeNode *node = planningTree.search(key);
-    float reachability = samplingTree ? samplingTree->getReachability(planningTree.keyToCoord(key)) : 1.f;
+    float reachability = samplingTree ? samplingTree->getReachability(transformToWorkspace(planningTree.keyToCoord(key))) : 1.f;
     if (reachability > 0) reachability = 1.f; // Test: binarize reachability
     if (node == NULL)
     {
@@ -765,7 +782,7 @@ double ViewpointPlanner::computeExpectedRayIGinWorkspace(const octomap::KeyRay &
     }
     /*float logOdds = testTree.keyToLogOdds(key);
     double gain = testTree.computeExpectedInformationGain(logOdds);
-    double reachability = samplingTree ? samplingTree->getReachability(planningTree.keyToCoord(key)) : 1.0; // default to 1 if reachability not specified
+    double reachability = samplingTree ? samplingTree->getReachability(transformToWorkspace(planningTree.keyToCoord(key))) : 1.0; // default to 1 if reachability not specified
     //const double RB_WEIGHT = 0.5;
     double weightedGain = reachability * gain;//RB_WEIGHT * reachability + (1 - RB_WEIGHT) * gain;
     expected_gain += weightedGain; // * curProb
@@ -906,7 +923,7 @@ void ViewpointPlanner::visualizeBorderPoints(const octomap::point3d &pmin, const
   tree_mtx.unlock();
 
   visualization_msgs::Marker marker;
-  marker.header.frame_id = "world";
+  marker.header.frame_id = map_frame;
   marker.header.stamp = ros::Time();
   marker.ns = "borderPoints";
   marker.id = 0;
@@ -931,6 +948,27 @@ void ViewpointPlanner::visualizeBorderPoints(const octomap::point3d &pmin, const
     marker.points.push_back(octomap::pointOctomapToMsg(point));
   }
   pointVisPub.publish( marker );
+}
+
+octomap::point3d ViewpointPlanner::transformToWorkspace(const octomap::point3d &p)
+{
+  if (map_frame == ws_frame)
+    return p;
+
+  geometry_msgs::TransformStamped trans;
+  try
+  {
+    trans = tfBuffer.lookupTransform(ws_frame, map_frame, ros::Time(0));
+  }
+  catch (const tf2::TransformException &e)
+  {
+    ROS_ERROR_STREAM("Couldn't find transform to ws frame: " << e.what());
+    return p;
+  }
+
+  octomap::point3d pt;
+  tf2::doTransform(p, pt, trans);
+  return pt;
 }
 
 octomap::point3d ViewpointPlanner::computeSurfaceNormalDir(const octomap::OcTreeKey &key)
@@ -998,7 +1036,7 @@ std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleAroundMultiROIC
       vp.pose.position = octomap::pointOctomapToMsg(spherePoint);
       vp.pose.orientation = tf2::toMsg(viewQuat);
 
-      if (workspaceTree != NULL && workspaceTree->search(spherePoint) == NULL) // workspace specified and sampled point not in workspace
+      if (workspaceTree != NULL && workspaceTree->search(transformToWorkspace(spherePoint)) == NULL) // workspace specified and sampled point not in workspace
       {
         continue;
       }
@@ -1071,7 +1109,7 @@ std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleContourPoints(c
   std::vector<Viewpoint> sampled_vps;
   for (auto it = planningTree.begin_leafs_bbx(wsMin, wsMax), end = planningTree.end_leafs_bbx(); it != end; it++)
   {
-    if (samplingTree != NULL && samplingTree->search(it.getCoordinate()) == NULL) // sampling tree specified and sampled point not in sampling tree
+    if (samplingTree != NULL && samplingTree->search(transformToWorkspace(it.getCoordinate())) == NULL) // sampling tree specified and sampled point not in sampling tree
     {
       continue;
     }
@@ -1105,7 +1143,7 @@ std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleContourPoints(c
     tf2::Quaternion viewQuat = dirVecToQuat(-normalDir, camQuat, viewDir);
     vp.pose.position = octomap::pointOctomapToMsg(vpOrig);
     vp.pose.orientation = tf2::toMsg(viewQuat);
-    if (workspaceTree != NULL && workspaceTree->search(vpOrig) == NULL) // workspace specified and sampled point not in workspace
+    if (workspaceTree != NULL && workspaceTree->search(transformToWorkspace(vpOrig)) == NULL) // workspace specified and sampled point not in workspace
     {
       continue;
     }
@@ -1132,7 +1170,7 @@ std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleContourPoints(c
   }
 
   /*visualization_msgs::Marker marker;
-  marker.header.frame_id = "world";
+  marker.header.frame_id = map_frame;
   marker.header.stamp = ros::Time();
   marker.ns = "borderPoints";
   marker.id = 0;
@@ -1204,7 +1242,7 @@ std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleRoiContourPoint
     vp.pose.position = octomap::pointOctomapToMsg(spherePoint);
     vp.pose.orientation = tf2::toMsg(viewQuat);
 
-    if (workspaceTree != NULL && workspaceTree->search(spherePoint) == NULL) // workspace specified and sampled point not in workspace
+    if (workspaceTree != NULL && workspaceTree->search(transformToWorkspace(spherePoint)) == NULL) // workspace specified and sampled point not in workspace
     {
       continue;
     }
@@ -1276,7 +1314,7 @@ std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleRoiAdjecentCoun
 
   for (const octomap::OcTreeKey &key : inflated_roi_keys)
   {
-    if (samplingTree != NULL && samplingTree->search(planningTree.keyToCoord(key)) == NULL) // sampling tree specified and sampled point not in sampling tree
+    if (samplingTree != NULL && samplingTree->search(transformToWorkspace(planningTree.keyToCoord(key))) == NULL) // sampling tree specified and sampled point not in sampling tree
     {
       continue;
     }
@@ -1312,7 +1350,7 @@ std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleRoiAdjecentCoun
     vp.pose.position = octomap::pointOctomapToMsg(spherePoint);
     vp.pose.orientation = tf2::toMsg(viewQuat);
 
-    if (workspaceTree != NULL && workspaceTree->search(spherePoint) == NULL) // workspace specified and sampled point not in workspace
+    if (workspaceTree != NULL && workspaceTree->search(transformToWorkspace(spherePoint)) == NULL) // workspace specified and sampled point not in workspace
     {
       continue;
     }
@@ -1379,7 +1417,7 @@ std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleBorderPoints(co
 
   for (auto it = planningTree.begin_leafs_bbx(pmin, pmax), end = planningTree.end_leafs_bbx(); it != end; it++)
   {
-    if (workspaceTree != NULL && workspaceTree->search(it.getCoordinate()) == NULL) // workspace specified and sampled point not in workspace
+    if (workspaceTree != NULL && workspaceTree->search(transformToWorkspace(it.getCoordinate())) == NULL) // workspace specified and sampled point not in workspace
     {
       continue;
     }
@@ -1708,7 +1746,7 @@ void ViewpointPlanner::plannerLoop()
 
     try
     {
-      camFrameTf = tfBuffer.lookupTransform(MAP_FRAME, "camera_link", ros::Time(0));
+      camFrameTf = tfBuffer.lookupTransform(map_frame, "camera_link", ros::Time(0));
     }
     catch (const tf2::TransformException &e)
     {

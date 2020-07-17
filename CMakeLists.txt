@@ -21,6 +21,7 @@ set (CATKIN_DEPENDENCIES
     moveit_ros_planning_interface
     eigen_conversions
     dynamic_reconfigure
+    trolley_remote
 )
 
 ## Find catkin macros and libraries

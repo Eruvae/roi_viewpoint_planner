@@ -11,6 +11,7 @@
 #include "roi_viewpoint_planner/PlannerConfig.h"
 
 #include "octomap_vpp/marching_cubes.h"
+#include "trolley_remote/trolley_remote.h"
 
 ViewpointPlanner *planner;
 
@@ -133,6 +134,10 @@ int main(int argc, char **argv)
   ros::AsyncSpinner spinner(4);
   spinner.start();
 
+  /*trolley_remote::TrolleyRemote trm(nh, nhp);
+  ROS_INFO_STREAM("Trolley status: " << trm.getStatus());
+  ROS_INFO_STREAM("Current position/height: " << trm.getPosition() << ", " << trm.getHeight());*/
+
   double tree_resolution = 0.01;
   if (nhp.hasParam("tree_resolution"))
     nhp.getParam("tree_resolution", tree_resolution);
@@ -142,8 +147,10 @@ int main(int argc, char **argv)
   std::string wstree_default_package = ros::package::getPath("phenorob_ur5e");
   std::string wstree_file = nhp.param<std::string>("workspace_tree", wstree_default_package + "/workspace_trees/ur_retractable/workspace_map.ot");
   std::string sampling_tree_file = nhp.param<std::string>("sampling_tree", wstree_default_package + "/workspace_trees/ur_retractable/inflated_workspace_map.ot");
+  std::string map_frame = nhp.param<std::string>("map_frame", "world");
+  std::string ws_frame = nhp.param<std::string>("ws_frame", "arm_base_link");
 
-  planner = new ViewpointPlanner(nh, nhp, wstree_file, sampling_tree_file, tree_resolution);
+  planner = new ViewpointPlanner(nh, nhp, wstree_file, sampling_tree_file, tree_resolution, map_frame, ws_frame);
   ros::ServiceServer changePlannerModeService = nhp.advertiseService("change_planner_mode", changePlannerMode);
   ros::ServiceServer activatePlanExecutionService = nhp.advertiseService("activate_plan_execution", activatePlanExecution);
   ros::ServiceServer saveTreeAsObjService = nhp.advertiseService("save_tree_as_obj", saveTreeAsObj);

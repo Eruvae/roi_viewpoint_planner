@@ -68,7 +68,6 @@ namespace std {
 const double OCCUPANCY_THRESH = 0.7;
 const double FREE_THRESH = 0.3;
 
-const std::string MAP_FRAME = "world";
 const std::string PC_TOPIC = "/move_group/filtered_cloud"; //"/camera/depth/points";
 const std::string PC_GLOBAL = "/points_global";
 
@@ -98,7 +97,7 @@ private:
   boost::mutex tree_mtx;
 
   message_filters::Subscriber<sensor_msgs::PointCloud2> depthCloudSub;
-  //tf2_ros::MessageFilter<sensor_msgs::PointCloud2> tfCloudFilter(depthCloudSub, tfBuffer, MAP_FRAME, 1, nh);
+  //tf2_ros::MessageFilter<sensor_msgs::PointCloud2> tfCloudFilter(depthCloudSub, tfBuffer, map_frame, 1, nh);
   //message_filters::Cache<sensor_msgs::PointCloud2> cloudCache(tfCloudFilter, 1);
 
   //message_filters::Subscriber<sensor_msgs::PointCloud2> pcGlobalSub(nh, PC_GLOBAL, 1);
@@ -121,6 +120,9 @@ private:
   std::atomic_bool roiScanned;
 
   roi_viewpoint_planner::PlannerState state;
+
+  std::string map_frame;
+  std::string ws_frame;
 
   #ifdef PUBLISH_PLANNING_TIMES
   boost::mutex times_mtx;
@@ -177,7 +179,8 @@ public:
     bool isFree;
   };
 
-  ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, const std::string &wstree_file, const std::string &sampling_tree_file, double tree_resolution);
+  ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, const std::string &wstree_file, const std::string &sampling_tree_file, double tree_resolution,
+                   const std::string &map_frame, const std::string &ws_frame);
 
   // Set planner parameters
 
@@ -252,6 +255,8 @@ public:
   bool hasUnknownAndOccupiedNeighbour18(const octomap::OcTreeKey &key, unsigned int depth = 0);
 
   void visualizeBorderPoints(const octomap::point3d &pmin, const octomap::point3d &pmax, unsigned int depth = 0);
+
+  octomap::point3d transformToWorkspace(const octomap::point3d &p);
 
   octomap::point3d computeSurfaceNormalDir(const octomap::OcTreeKey &key);
 
