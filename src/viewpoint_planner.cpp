@@ -27,9 +27,10 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, co
   samplingTree(NULL),
   wsMin(-FLT_MAX, -FLT_MAX, -FLT_MAX),
   wsMax(FLT_MAX, FLT_MAX, FLT_MAX),
-  depthCloudSub(nh, PC_TOPIC, 1),
   tfBuffer(ros::Duration(30)),
   tfListener(tfBuffer),
+  depthCloudSub(nh, PC_TOPIC, 1),
+  tfCloudFilter(depthCloudSub, tfBuffer, map_frame, 100, nh),
   manipulator_group("manipulator"),
   robot_model_loader("robot_description"),
   kinematic_model(robot_model_loader.getModel()),
@@ -134,9 +135,9 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, co
   }
 
 
-  depthCloudSub.registerCallback(&ViewpointPlanner::registerNewScan, this);
-  //tfCloudFilter.registerCallback(registerNewScan);
-  //cloudCache.registerCallback(registerNewScan);
+  //depthCloudSub.registerCallback(&ViewpointPlanner::registerNewScan, this);
+  tfCloudFilter.registerCallback(&ViewpointPlanner::registerNewScan, this);
+  //cloudCache.registerCallback(&ViewpointPlanner::registerNewScan, this);
 
   //syncDets.registerCallback(registerRoi);
 
@@ -214,6 +215,7 @@ void ViewpointPlanner::publishMap()
 
 void ViewpointPlanner::registerNewScan(const sensor_msgs::PointCloud2ConstPtr &pc_msg)
 {
+  ROS_INFO_STREAM("REGISTER_NEW_SCAN");
   if (!insert_occ_while_moving && robotIsMoving.load())
   {
     //ROS_INFO_STREAM("Robot is currently moving, not inserting occupancy");
@@ -232,7 +234,7 @@ void ViewpointPlanner::registerNewScan(const sensor_msgs::PointCloud2ConstPtr &p
   }
   catch (const tf2::TransformException &e)
   {
-    ROS_ERROR_STREAM("Couldn't find transform to map frame: " << e.what());
+    ROS_ERROR_STREAM("Couldn't find transform to map frame in registerNewScan: " << e.what());
     return;
   }
   //ROS_INFO_STREAM("Transform for time " << pc_msg->header.stamp << " successful");
@@ -366,7 +368,7 @@ void ViewpointPlanner::registerRoiPCL(const pointcloud_roi_msgs::PointcloudWithR
   }
   catch (const tf2::TransformException &e)
   {
-    ROS_ERROR_STREAM("Couldn't find transform to map frame: " << e.what());
+    ROS_ERROR_STREAM("Couldn't find transform to map frame in registerRoiOCL: " << e.what());
     return;
   }
 
@@ -433,7 +435,7 @@ void ViewpointPlanner::registerRoi(const sensor_msgs::PointCloud2ConstPtr &pc_ms
   }
   catch (const tf2::TransformException &e)
   {
-    ROS_ERROR_STREAM("Couldn't find transform to map frame: " << e.what());
+    ROS_ERROR_STREAM("Couldn't find transform to map frame in registerRoi: " << e.what());
     return;
   }
 
@@ -962,11 +964,32 @@ octomap::point3d ViewpointPlanner::transformToWorkspace(const octomap::point3d &
   }
   catch (const tf2::TransformException &e)
   {
-    ROS_ERROR_STREAM("Couldn't find transform to ws frame: " << e.what());
+    ROS_ERROR_STREAM("Couldn't find transform to ws frame in transformToWorkspace: " << e.what());
     return p;
   }
 
   octomap::point3d pt;
+  tf2::doTransform(p, pt, trans);
+  return pt;
+}
+
+geometry_msgs::Pose ViewpointPlanner::transformToWorkspace(const geometry_msgs::Pose &p)
+{
+  if (map_frame == ws_frame)
+    return p;
+
+  geometry_msgs::TransformStamped trans;
+  try
+  {
+    trans = tfBuffer.lookupTransform(ws_frame, map_frame, ros::Time(0));
+  }
+  catch (const tf2::TransformException &e)
+  {
+    ROS_ERROR_STREAM("Couldn't find transform to ws frame in transformToWorkspace: " << e.what());
+    return p;
+  }
+
+  geometry_msgs::Pose pt;
   tf2::doTransform(p, pt, trans);
   return pt;
 }
@@ -1042,7 +1065,7 @@ std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleAroundMultiROIC
       }
       if (compute_ik_when_sampling)
       {
-        if (!manipulator_group.setJointValueTarget(vp.pose, "camera_link"))
+        if (!manipulator_group.setJointValueTarget(transformToWorkspace(vp.pose), "camera_link"))
           continue;
 
         vp.joint_target.reset(new robot_state::RobotState(manipulator_group.getJointValueTarget()));
@@ -1149,7 +1172,7 @@ std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleContourPoints(c
     }
     if (compute_ik_when_sampling)
     {
-      if (!manipulator_group.setJointValueTarget(vp.pose, "camera_link"))
+      if (!manipulator_group.setJointValueTarget(transformToWorkspace(vp.pose), "camera_link"))
         continue;
 
       vp.joint_target.reset(new robot_state::RobotState(manipulator_group.getJointValueTarget()));
@@ -1248,7 +1271,7 @@ std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleRoiContourPoint
     }
     if (compute_ik_when_sampling)
     {
-      if (!manipulator_group.setJointValueTarget(vp.pose, "camera_link"))
+      if (!manipulator_group.setJointValueTarget(transformToWorkspace(vp.pose), "camera_link"))
         continue;
 
       vp.joint_target.reset(new robot_state::RobotState(manipulator_group.getJointValueTarget()));
@@ -1356,7 +1379,7 @@ std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleRoiAdjecentCoun
     }
     if (compute_ik_when_sampling)
     {
-      if (!manipulator_group.setJointValueTarget(vp.pose, "camera_link"))
+      if (!manipulator_group.setJointValueTarget(transformToWorkspace(vp.pose), "camera_link"))
         continue;
 
       vp.joint_target.reset(new robot_state::RobotState(manipulator_group.getJointValueTarget()));
@@ -1455,7 +1478,7 @@ std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleBorderPoints(co
 
     if (compute_ik_when_sampling)
     {
-      if (!manipulator_group.setJointValueTarget(vp.pose, "camera_link"))
+      if (!manipulator_group.setJointValueTarget(transformToWorkspace(vp.pose), "camera_link"))
         continue;
 
       vp.joint_target.reset(new robot_state::RobotState(manipulator_group.getJointValueTarget()));
@@ -1750,7 +1773,7 @@ void ViewpointPlanner::plannerLoop()
     }
     catch (const tf2::TransformException &e)
     {
-      ROS_ERROR_STREAM("Couldn't find transform to map frame: " << e.what());
+      ROS_ERROR_STREAM("Couldn't find transform to map frame in plannerLoop: " << e.what());
       continue;
     }
 
@@ -1871,7 +1894,7 @@ void ViewpointPlanner::plannerLoop()
       }
       if (use_cartesian_motion)
       {
-        if (moveToPoseCartesian(vp.pose))
+        if (moveToPoseCartesian(transformToWorkspace(vp.pose)))
           break;
       }
       else
@@ -1883,7 +1906,7 @@ void ViewpointPlanner::plannerLoop()
         }
         else
         {
-          if (moveToPose(vp.pose))
+          if (moveToPose(transformToWorkspace(vp.pose)))
             break;
         }
       }

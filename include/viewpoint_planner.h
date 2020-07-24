@@ -97,7 +97,7 @@ private:
   boost::mutex tree_mtx;
 
   message_filters::Subscriber<sensor_msgs::PointCloud2> depthCloudSub;
-  //tf2_ros::MessageFilter<sensor_msgs::PointCloud2> tfCloudFilter(depthCloudSub, tfBuffer, map_frame, 1, nh);
+  tf2_ros::MessageFilter<sensor_msgs::PointCloud2> tfCloudFilter;
   //message_filters::Cache<sensor_msgs::PointCloud2> cloudCache(tfCloudFilter, 1);
 
   //message_filters::Subscriber<sensor_msgs::PointCloud2> pcGlobalSub(nh, PC_GLOBAL, 1);
@@ -257,6 +257,7 @@ public:
   void visualizeBorderPoints(const octomap::point3d &pmin, const octomap::point3d &pmax, unsigned int depth = 0);
 
   octomap::point3d transformToWorkspace(const octomap::point3d &p);
+  geometry_msgs::Pose transformToWorkspace(const geometry_msgs::Pose &p);
 
   octomap::point3d computeSurfaceNormalDir(const octomap::OcTreeKey &key);
 
