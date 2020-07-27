@@ -3,20 +3,7 @@
 #include <std_msgs/Bool.h>
 #include <std_srvs/Trigger.h>
 #include "octomap_vpp/marching_cubes.h"
-
-namespace tf2
-{
-template <>
-inline
-  void doTransform(const octomap::point3d& t_in, octomap::point3d& t_out, const geometry_msgs::TransformStamped& transform)
-  {
-    tf2::Transform t;
-    fromMsg(transform.transform, t);
-    tf2::Vector3 v_in(t_in.x(), t_in.y(), t_in.z());
-    tf2::Vector3 v_out = t * v_in;
-    t_out = octomap::point3d(v_out.x(), v_out.y(), v_out.z());
-  }
-}
+#include "octomap_vpp/octomap_transforms.h"
 
 ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, const std::string &wstree_file, const std::string &sampling_tree_file, double tree_resolution,
                                    const std::string &map_frame, const std::string &ws_frame) :
@@ -52,10 +39,10 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, co
   workspaceTreePub = nh.advertise<octomap_msgs::Octomap>("workspace_tree", 1, true);
   cubeVisPub = nh.advertise<visualization_msgs::Marker>("cube_vis", 1);
 
-  plannerStatePub = nhp.advertise<roi_viewpoint_planner::PlannerState>("planner_state", 1, true);
+  plannerStatePub = nhp.advertise<roi_viewpoint_planner_msgs::PlannerState>("planner_state", 1, true);
 
   #ifdef PUBLISH_PLANNING_TIMES
-  planningTimesPub = nhp.advertise<roi_viewpoint_planner::PlanningTimes>("planning_times", 1, true);
+  planningTimesPub = nhp.advertise<roi_viewpoint_planner_msgs::PlanningTimes>("planning_times", 1, true);
   #endif
 
   requestExecutionConfirmation = nhp.serviceClient<std_srvs::Trigger>("request_execution_confirmation");
@@ -136,12 +123,12 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, co
 
 
   //depthCloudSub.registerCallback(&ViewpointPlanner::registerNewScan, this);
-  tfCloudFilter.registerCallback(&ViewpointPlanner::registerNewScan, this);
+  //tfCloudFilter.registerCallback(&ViewpointPlanner::registerNewScan, this);
   //cloudCache.registerCallback(&ViewpointPlanner::registerNewScan, this);
 
   //syncDets.registerCallback(registerRoi);
 
-  roiSub = nh.subscribe("/pointcloud_roi", 1, &ViewpointPlanner::registerRoiPCL, this);
+  roiSub = nh.subscribe("/pointcloud_roi", 1, &ViewpointPlanner::registerPointcloudWithRoi, this);
 
   if (workspaceTree)
   {
@@ -213,7 +200,204 @@ void ViewpointPlanner::publishMap()
   }
 }
 
-void ViewpointPlanner::registerNewScan(const sensor_msgs::PointCloud2ConstPtr &pc_msg)
+void ViewpointPlanner::pointCloud2ToOctomapByIndices(const sensor_msgs::PointCloud2 &cloud, const std::unordered_set<size_t> &indices
+                                                     ,  octomap::Pointcloud &inlierCloud, octomap::Pointcloud &outlierCloud, octomap::Pointcloud &fullCloud)
+{
+   inlierCloud.reserve(indices.size());
+   outlierCloud.reserve(cloud.data.size() / cloud.point_step - indices.size());
+   fullCloud.reserve(cloud.data.size() / cloud.point_step);
+
+   sensor_msgs::PointCloud2ConstIterator<float> iter_x(cloud, "x");
+   sensor_msgs::PointCloud2ConstIterator<float> iter_y(cloud, "y");
+   sensor_msgs::PointCloud2ConstIterator<float> iter_z(cloud, "z");
+
+   for (size_t i = 0; iter_x != iter_x.end(); ++iter_x, ++iter_y, ++iter_z, ++i)
+   {
+     octomap::point3d p(*iter_x, *iter_y, *iter_z);
+     fullCloud.push_back(p);
+     // Check if the point is valid
+     if (std::isfinite (*iter_x) && std::isfinite (*iter_y) && std::isfinite (*iter_z))
+     {
+       if (indices.find(i) != indices.end())
+         inlierCloud.push_back(p);
+       else
+         outlierCloud.push_back(p);
+     }
+
+   }
+}
+
+
+void ViewpointPlanner::pointCloud2ToOctomapByIndices(const sensor_msgs::PointCloud2 &cloud, const std::unordered_set<size_t> &indices, const geometry_msgs::Transform &transform
+                                                     ,  octomap::Pointcloud &inlierCloud, octomap::Pointcloud &outlierCloud, octomap::Pointcloud &fullCloud)
+{
+   inlierCloud.reserve(indices.size());
+   outlierCloud.reserve(cloud.data.size() / cloud.point_step - indices.size());
+   fullCloud.reserve(cloud.data.size() / cloud.point_step);
+
+   octomap::pose6d t = octomap_vpp::transformToOctomath(transform);
+
+   sensor_msgs::PointCloud2ConstIterator<float> iter_x(cloud, "x");
+   sensor_msgs::PointCloud2ConstIterator<float> iter_y(cloud, "y");
+   sensor_msgs::PointCloud2ConstIterator<float> iter_z(cloud, "z");
+
+   for (size_t i = 0; iter_x != iter_x.end(); ++iter_x, ++iter_y, ++iter_z, ++i)
+   {
+     octomap::point3d p(*iter_x, *iter_y, *iter_z);
+     octomap::point3d p_tf = t.transform(p);
+     fullCloud.push_back(p_tf);
+     // Check if the point is valid
+     if (std::isfinite (*iter_x) && std::isfinite (*iter_y) && std::isfinite (*iter_z))
+     {
+       if (indices.find(i) != indices.end())
+         inlierCloud.push_back(p_tf);
+       else
+         outlierCloud.push_back(p_tf);
+     }
+
+   }
+}
+
+// indices must be ordered!
+void ViewpointPlanner::pointCloud2ToOctomapByIndices(const sensor_msgs::PointCloud2 &cloud, const std::vector<uint32_t> &indices,
+                                   octomap::Pointcloud &inlierCloud, octomap::Pointcloud &outlierCloud, octomap::Pointcloud &fullCloud)
+{
+  inlierCloud.reserve(indices.size());
+  outlierCloud.reserve(cloud.data.size() / cloud.point_step - indices.size());
+  fullCloud.reserve(cloud.data.size() / cloud.point_step);
+
+  sensor_msgs::PointCloud2ConstIterator<float> iter_x(cloud, "x");
+  sensor_msgs::PointCloud2ConstIterator<float> iter_y(cloud, "y");
+  sensor_msgs::PointCloud2ConstIterator<float> iter_z(cloud, "z");
+
+  std::vector<uint32_t>::const_iterator it = indices.begin();
+  for (uint32_t i = 0; iter_x != iter_x.end(); ++iter_x, ++iter_y, ++iter_z, ++i)
+  {
+    // Check if the point is valid
+    if (std::isfinite (*iter_x) && std::isfinite (*iter_y) && std::isfinite (*iter_z))
+    {
+      octomap::point3d p(*iter_x, *iter_y, *iter_z);
+      fullCloud.push_back(p);
+      if (it != indices.end() && i == *it)
+      {
+        inlierCloud.push_back(p);
+        it++;
+      }
+      else
+      {
+        outlierCloud.push_back(p);
+      }
+    }
+  }
+}
+
+void ViewpointPlanner::pointCloud2ToOctomapByIndices(const sensor_msgs::PointCloud2 &cloud, const std::vector<uint32_t> &indices, const geometry_msgs::Transform &transform,
+                                   octomap::Pointcloud &inlierCloud, octomap::Pointcloud &outlierCloud, octomap::Pointcloud &fullCloud)
+{
+  inlierCloud.reserve(indices.size());
+  outlierCloud.reserve(cloud.data.size() / cloud.point_step - indices.size());
+  fullCloud.reserve(cloud.data.size() / cloud.point_step);
+
+  octomap::pose6d t = octomap_vpp::transformToOctomath(transform);
+
+  sensor_msgs::PointCloud2ConstIterator<float> iter_x(cloud, "x");
+  sensor_msgs::PointCloud2ConstIterator<float> iter_y(cloud, "y");
+  sensor_msgs::PointCloud2ConstIterator<float> iter_z(cloud, "z");
+
+  std::vector<uint32_t>::const_iterator it = indices.begin();
+  for (uint32_t i = 0; iter_x != iter_x.end(); ++iter_x, ++iter_y, ++iter_z, ++i)
+  {
+    // Check if the point is valid
+    if (std::isfinite (*iter_x) && std::isfinite (*iter_y) && std::isfinite (*iter_z))
+    {
+      octomap::point3d p(*iter_x, *iter_y, *iter_z);
+      octomap::point3d p_tf = t.transform(p);
+      fullCloud.push_back(p_tf);
+      if (it != indices.end() && i == *it)
+      {
+        inlierCloud.push_back(p_tf);
+        it++;
+      }
+      else
+      {
+        outlierCloud.push_back(p_tf);
+      }
+    }
+  }
+}
+
+void ViewpointPlanner::registerPointcloudWithRoi(const pointcloud_roi_msgs::PointcloudWithRoi &roi)
+{
+  if (!insert_roi_while_moving && robotIsMoving.load())
+  {
+    //ROS_INFO_STREAM("Robot is currently moving, not inserting ROI");
+    return;
+  }
+
+  #ifdef PUBLISH_PLANNING_TIMES
+  ros::Time cbStartTime = ros::Time::now();
+  #endif
+
+  geometry_msgs::TransformStamped pcFrameTf;
+  try
+  {
+    pcFrameTf = tfBuffer.lookupTransform(map_frame, roi.cloud.header.frame_id, roi.cloud.header.stamp);
+  }
+  catch (const tf2::TransformException &e)
+  {
+    ROS_ERROR_STREAM("Couldn't find transform to map frame in registerRoiOCL: " << e.what());
+    return;
+  }
+
+  if (!insert_roi_if_not_moved) // check if robot has moved since last update
+  {
+    Eigen::Affine3d camPoseEigen = tf2::transformToEigen(pcFrameTf.transform);
+    static Eigen::Affine3d lastCamPose;
+    if (camPoseEigen.isApprox(lastCamPose, 1e-2))
+    {
+        ROS_INFO("Arm has not moved, not inserting ROI");
+        return;
+    }
+    lastCamPose = camPoseEigen;
+  }
+
+  const geometry_msgs::Vector3 &pcfOrig = pcFrameTf.transform.translation;
+  octomap::point3d scan_orig(pcfOrig.x, pcfOrig.y, pcfOrig.z);
+
+  //sensor_msgs::PointCloud2 pc_glob;
+  //tf2::doTransform(roi.cloud, pc_glob, pcFrameTf);
+
+  octomap::Pointcloud inlierCloud, outlierCloud, fullCloud;
+  pointCloud2ToOctomapByIndices(roi.cloud, roi.roi_indices, pcFrameTf.transform, inlierCloud, outlierCloud, fullCloud);
+  //ROS_INFO_STREAM("Cloud sizes: " << inlierCloud.size() << ",  " << outlierCloud.size());
+
+  tree_mtx.lock();
+  planningTree.insertPointCloud(fullCloud, scan_orig);
+  planningTree.insertRegionScan(inlierCloud, outlierCloud);
+  tree_mtx.unlock();
+
+  roiScanned.store(true);
+  if (publish_planning_state)
+  {
+    state.roi_scanned = true;
+    plannerStatePub.publish(state);
+  }
+
+  #ifdef PUBLISH_PLANNING_TIMES
+  ros::Time insertTime = ros::Time::now();
+  times_mtx.lock();
+  times.insert_roi_latest = insertTime - cbStartTime;
+  times.num_rois++;
+  times.insert_roi_avg += (times.insert_roi_latest - times.insert_roi_avg) * (1.0 / times.num_rois);
+  planningTimesPub.publish(times);
+  times_mtx.unlock();
+  #endif
+
+  //std::vector<octomap::OcTreeKey> roi_keys = testTree.getRoiKeys();
+  //ROS_INFO_STREAM("Found " << testTree.getRoiSize() << " ROI keys (" << testTree.getAddedRoiSize() << " added, " << testTree.getDeletedRoiSize() << " removed)");
+}
+
+/*void ViewpointPlanner::registerNewScan(const sensor_msgs::PointCloud2ConstPtr &pc_msg)
 {
   ROS_INFO_STREAM("REGISTER_NEW_SCAN");
   if (!insert_occ_while_moving && robotIsMoving.load())
@@ -290,133 +474,9 @@ void ViewpointPlanner::registerNewScan(const sensor_msgs::PointCloud2ConstPtr &p
   #endif
 
   //ROS_INFO_STREAM("Timings - TF: " << tfTime - cbStartTime << "; doTF: " << doTFTime - tfTime << "; toOct: " << toOctoTime - doTFTime << "; insert: " << insertTime - toOctoTime);
-}
+}*/
 
-void ViewpointPlanner::pointCloud2ToOctomapByIndices(const sensor_msgs::PointCloud2 &cloud, const std::unordered_set<size_t> &indices,  octomap::Pointcloud &inlierCloud, octomap::Pointcloud &outlierCloud)
-{
-   inlierCloud.reserve(indices.size());
-   outlierCloud.reserve(cloud.data.size() / cloud.point_step - indices.size());
-
-   sensor_msgs::PointCloud2ConstIterator<float> iter_x(cloud, "x");
-   sensor_msgs::PointCloud2ConstIterator<float> iter_y(cloud, "y");
-   sensor_msgs::PointCloud2ConstIterator<float> iter_z(cloud, "z");
-
-   size_t invalid_points = 0;
-   for (size_t i = 0; iter_x != iter_x.end(); ++iter_x, ++iter_y, ++iter_z, ++i){
-     // Check if the point is invalid
-     if (std::isfinite (*iter_x) && std::isfinite (*iter_y) && std::isfinite (*iter_z))
-     {
-       if (indices.find(i) != indices.end())
-         inlierCloud.push_back(*iter_x, *iter_y, *iter_z);
-       else
-         outlierCloud.push_back(*iter_x, *iter_y, *iter_z);
-     }
-     else
-       invalid_points++;
-   }
-   //ROS_INFO_STREAM("Number of invalid points: " << invalid_points);
-}
-
-// indices must be ordered!
-void ViewpointPlanner::pointCloud2ToOctomapByIndices(const sensor_msgs::PointCloud2 &cloud, const std::vector<uint32_t> &indices,  octomap::Pointcloud &inlierCloud, octomap::Pointcloud &outlierCloud)
-{
-   inlierCloud.reserve(indices.size());
-   outlierCloud.reserve(cloud.data.size() / cloud.point_step - indices.size());
-
-   sensor_msgs::PointCloud2ConstIterator<float> iter_x(cloud, "x");
-   sensor_msgs::PointCloud2ConstIterator<float> iter_y(cloud, "y");
-   sensor_msgs::PointCloud2ConstIterator<float> iter_z(cloud, "z");
-
-   size_t invalid_points = 0;
-   std::vector<uint32_t>::const_iterator it = indices.begin();
-   for (uint32_t i = 0; iter_x != iter_x.end(); ++iter_x, ++iter_y, ++iter_z, ++i){
-     // Check if the point is invalid
-     if (std::isfinite (*iter_x) && std::isfinite (*iter_y) && std::isfinite (*iter_z))
-     {
-       if (it != indices.end() && i == *it)
-       {
-         inlierCloud.push_back(*iter_x, *iter_y, *iter_z);
-         it++;
-       }
-       else
-       {
-         outlierCloud.push_back(*iter_x, *iter_y, *iter_z);
-       }
-     }
-     else
-       invalid_points++;
-   }
-   //ROS_INFO_STREAM("Number of invalid points: " << invalid_points);
-}
-
-void ViewpointPlanner::registerRoiPCL(const pointcloud_roi_msgs::PointcloudWithRoi &roi)
-{
-  if (!insert_roi_while_moving && robotIsMoving.load())
-  {
-    //ROS_INFO_STREAM("Robot is currently moving, not inserting ROI");
-    return;
-  }
-
-  #ifdef PUBLISH_PLANNING_TIMES
-  ros::Time cbStartTime = ros::Time::now();
-  #endif
-
-  geometry_msgs::TransformStamped pcFrameTf;
-  try
-  {
-    pcFrameTf = tfBuffer.lookupTransform(map_frame, roi.cloud.header.frame_id, roi.cloud.header.stamp);
-  }
-  catch (const tf2::TransformException &e)
-  {
-    ROS_ERROR_STREAM("Couldn't find transform to map frame in registerRoiOCL: " << e.what());
-    return;
-  }
-
-  if (!insert_roi_if_not_moved) // check if robot has moved since last update
-  {
-    Eigen::Affine3d camPoseEigen = tf2::transformToEigen(pcFrameTf.transform);
-    static Eigen::Affine3d lastCamPose;
-    if (camPoseEigen.isApprox(lastCamPose, 1e-2))
-    {
-        ROS_INFO("Arm has not moved, not inserting ROI");
-        return;
-    }
-    lastCamPose = camPoseEigen;
- }
-
-  sensor_msgs::PointCloud2 pc_glob;
-  tf2::doTransform(roi.cloud, pc_glob, pcFrameTf);
-
-  octomap::Pointcloud inlierCloud, outlierCloud;
-  pointCloud2ToOctomapByIndices(pc_glob, roi.roi_indices, inlierCloud, outlierCloud);
-  //ROS_INFO_STREAM("Cloud sizes: " << inlierCloud.size() << ",  " << outlierCloud.size());
-
-  tree_mtx.lock();
-  planningTree.insertRegionScan(inlierCloud, outlierCloud);
-  tree_mtx.unlock();
-
-  roiScanned.store(true);
-  if (publish_planning_state)
-  {
-    state.roi_scanned = true;
-    plannerStatePub.publish(state);
-  }
-
-  #ifdef PUBLISH_PLANNING_TIMES
-  ros::Time insertTime = ros::Time::now();
-  times_mtx.lock();
-  times.insert_roi_latest = insertTime - cbStartTime;
-  times.num_rois++;
-  times.insert_roi_avg += (times.insert_roi_latest - times.insert_roi_avg) * (1.0 / times.num_rois);
-  planningTimesPub.publish(times);
-  times_mtx.unlock();
-  #endif
-
-  //std::vector<octomap::OcTreeKey> roi_keys = testTree.getRoiKeys();
-  //ROS_INFO_STREAM("Found " << testTree.getRoiSize() << " ROI keys (" << testTree.getAddedRoiSize() << " added, " << testTree.getDeletedRoiSize() << " removed)");
-}
-
-void ViewpointPlanner::registerRoi(const sensor_msgs::PointCloud2ConstPtr &pc_msg, const instance_segmentation_msgs::DetectionsConstPtr &dets_msg)
+/*void ViewpointPlanner::registerRoi(const sensor_msgs::PointCloud2ConstPtr &pc_msg, const instance_segmentation_msgs::DetectionsConstPtr &dets_msg)
 {
   if (!insert_roi_while_moving && robotIsMoving.load())
   {
@@ -499,7 +559,7 @@ void ViewpointPlanner::registerRoi(const sensor_msgs::PointCloud2ConstPtr &pc_ms
   planningTimesPub.publish(times);
   times_mtx.unlock();
   #endif
-}
+}*/
 
 octomap::point3d ViewpointPlanner::sampleRandomPointOnSphere(const octomap::point3d &center, double radius)
 {

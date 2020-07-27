@@ -2,13 +2,13 @@
 #include <ros/package.h>
 
 #include "viewpoint_planner.h"
-#include "roi_viewpoint_planner/ChangePlannerMode.h"
+#include "roi_viewpoint_planner_msgs/ChangePlannerMode.h"
 #include <std_srvs/SetBool.h>
 #include <std_srvs/Trigger.h>
 #include <boost/algorithm/string/predicate.hpp>
 
 #include <dynamic_reconfigure/server.h>
-#include "roi_viewpoint_planner/PlannerConfig.h"
+#include "roi_viewpoint_planner_msgs/PlannerConfig.h"
 
 #include "octomap_vpp/marching_cubes.h"
 #include "trolley_remote/trolley_remote.h"
@@ -29,7 +29,7 @@ bool saveTreeAsObj(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response 
   return true;
 }
 
-bool changePlannerMode(roi_viewpoint_planner::ChangePlannerMode::Request &req, roi_viewpoint_planner::ChangePlannerMode::Response &res)
+bool changePlannerMode(roi_viewpoint_planner_msgs::ChangePlannerMode::Request &req, roi_viewpoint_planner_msgs::ChangePlannerMode::Response &res)
 {
   if (req.mode < ViewpointPlanner::NUM_MODES)
   {

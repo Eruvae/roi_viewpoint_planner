@@ -1,6 +1,0 @@
-duration insert_scan_avg
-duration insert_scan_latest
-uint32 num_scans
-duration insert_roi_avg
-duration insert_roi_latest
-uint32 num_rois

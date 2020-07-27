@@ -1,9 +1,0 @@
-uint8 IDLE=0
-uint8 SAMPLE_AUTOMATIC = 1
-uint8 SAMPLE_ROI_CENTERS = 2
-uint8 SAMPLE_ROI_CONTOURS = 3
-uint8 SAMPLE_CONTOURS = 4
-uint8 SAMPLE_BORDER = 5
-uint8 mode
----
-bool success

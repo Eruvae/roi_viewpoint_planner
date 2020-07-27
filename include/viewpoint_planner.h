@@ -54,13 +54,13 @@ namespace std {
 #include <octomap_vpp/WorkspaceOcTree.h>
 #include <octomap_vpp/roioctree_utils.h>
 
-#include <roi_viewpoint_planner/PlannerState.h>
+#include <roi_viewpoint_planner_msgs/PlannerState.h>
 #include "compute_cubes.h"
 
 #define PUBLISH_PLANNING_TIMES
 
 #ifdef PUBLISH_PLANNING_TIMES
-#include <roi_viewpoint_planner/PlanningTimes.h>
+#include <roi_viewpoint_planner_msgs/PlanningTimes.h>
 #endif
 
 // Constants
@@ -119,7 +119,7 @@ private:
   std::atomic_bool occupancyScanned;
   std::atomic_bool roiScanned;
 
-  roi_viewpoint_planner::PlannerState state;
+  roi_viewpoint_planner_msgs::PlannerState state;
 
   std::string map_frame;
   std::string ws_frame;
@@ -127,7 +127,7 @@ private:
   #ifdef PUBLISH_PLANNING_TIMES
   boost::mutex times_mtx;
   ros::Publisher planningTimesPub;
-  roi_viewpoint_planner::PlanningTimes times;
+  roi_viewpoint_planner_msgs::PlanningTimes times;
   #endif
 
   std::default_random_engine random_engine;
@@ -207,16 +207,22 @@ public:
   //void publishOctomapToPlanningScene(const octomap_msgs::Octomap &map_msg);
   void publishMap();
 
-  void registerNewScan(const sensor_msgs::PointCloud2ConstPtr &pc_msg);
-
-  void pointCloud2ToOctomapByIndices(const sensor_msgs::PointCloud2 &cloud, const std::unordered_set<size_t> &indices,  octomap::Pointcloud &inlierCloud, octomap::Pointcloud &outlierCloud);
+  void pointCloud2ToOctomapByIndices(const sensor_msgs::PointCloud2 &cloud, const std::unordered_set<size_t> &indices,
+                                     octomap::Pointcloud &inlierCloud, octomap::Pointcloud &outlierCloud, octomap::Pointcloud &fullCloud);
+  void pointCloud2ToOctomapByIndices(const sensor_msgs::PointCloud2 &cloud, const std::unordered_set<size_t> &indices, const geometry_msgs::Transform &transform,
+                                     octomap::Pointcloud &inlierCloud, octomap::Pointcloud &outlierCloud, octomap::Pointcloud &fullCloud);
 
   // indices must be ordered!
-  void pointCloud2ToOctomapByIndices(const sensor_msgs::PointCloud2 &cloud, const std::vector<uint32_t> &indices,  octomap::Pointcloud &inlierCloud, octomap::Pointcloud &outlierCloud);
+  void pointCloud2ToOctomapByIndices(const sensor_msgs::PointCloud2 &cloud, const std::vector<uint32_t> &indices,
+                                     octomap::Pointcloud &inlierCloud, octomap::Pointcloud &outlierCloud, octomap::Pointcloud &fullCloud);
+  void pointCloud2ToOctomapByIndices(const sensor_msgs::PointCloud2 &cloud, const std::vector<uint32_t> &indices,  const geometry_msgs::Transform &transform,
+                                     octomap::Pointcloud &inlierCloud, octomap::Pointcloud &outlierCloud, octomap::Pointcloud &fullCloud);
 
-  void registerRoiPCL(const pointcloud_roi_msgs::PointcloudWithRoi &roi);
+  void registerPointcloudWithRoi(const pointcloud_roi_msgs::PointcloudWithRoi &roi);
 
-  void registerRoi(const sensor_msgs::PointCloud2ConstPtr &pc_msg, const instance_segmentation_msgs::DetectionsConstPtr &dets_msg);
+  //void registerNewScan(const sensor_msgs::PointCloud2ConstPtr &pc_msg);
+
+  //void registerRoi(const sensor_msgs::PointCloud2ConstPtr &pc_msg, const instance_segmentation_msgs::DetectionsConstPtr &dets_msg);
 
   inline double sampleRandomSensorDistance()
   {

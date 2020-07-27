@@ -1,7 +1,7 @@
 #include <ros/ros.h>
 #include <ros/package.h>
 #include <dynamic_reconfigure/client.h>
-#include <roi_viewpoint_planner/PlannerConfig.h>
+#include <roi_viewpoint_planner_msgs/PlannerConfig.h>
 #include <octomap_vpp/RoiOcTree.h>
 #include <octomap/AbstractOcTree.h>
 #include <octomap_msgs/Octomap.h>
@@ -20,7 +20,7 @@
 #include <pcl/surface/convex_hull.h>
 #include <pcl/visualization/pcl_visualizer.h>
 #include <dynamic_reconfigure/server.h>
-#include "roi_viewpoint_planner/EvaluatorConfig.h"
+#include "roi_viewpoint_planner_msgs/EvaluatorConfig.h"
 #include "compute_cubes.h"
 #include "point_cloud_color_handler_clusters.h"
 

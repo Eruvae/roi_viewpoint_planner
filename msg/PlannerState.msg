@@ -1,3 +1,0 @@
-bool robot_is_moving
-bool occupancy_scanned
-bool roi_scanned
