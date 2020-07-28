@@ -213,9 +213,9 @@ public:
                                      octomap::Pointcloud &inlierCloud, octomap::Pointcloud &outlierCloud, octomap::Pointcloud &fullCloud);
 
   // indices must be ordered!
-  void pointCloud2ToOctomapByIndices(const sensor_msgs::PointCloud2 &cloud, const std::vector<uint32_t> &indices,
+  void pointCloud2ToOctomapByIndices(const sensor_msgs::PointCloud2 &cloud, const std::vector<int> &indices,
                                      octomap::Pointcloud &inlierCloud, octomap::Pointcloud &outlierCloud, octomap::Pointcloud &fullCloud);
-  void pointCloud2ToOctomapByIndices(const sensor_msgs::PointCloud2 &cloud, const std::vector<uint32_t> &indices,  const geometry_msgs::Transform &transform,
+  void pointCloud2ToOctomapByIndices(const sensor_msgs::PointCloud2 &cloud, const std::vector<int> &indices,  const geometry_msgs::Transform &transform,
                                      octomap::Pointcloud &inlierCloud, octomap::Pointcloud &outlierCloud, octomap::Pointcloud &fullCloud);
 
   void registerPointcloudWithRoi(const pointcloud_roi_msgs::PointcloudWithRoi &roi);
