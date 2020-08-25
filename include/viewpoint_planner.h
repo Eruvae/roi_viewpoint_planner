@@ -78,6 +78,7 @@ private:
   octomap_vpp::WorkspaceOcTree *workspaceTree;
   octomap_vpp::WorkspaceOcTree *samplingTree;
   octomap::point3d wsMin, wsMax;
+  octomap::point3d stMin, stMax;
   tf2_ros::Buffer tfBuffer;
   tf2_ros::TransformListener tfListener;
   ros::Publisher octomapPub;
@@ -262,6 +263,9 @@ public:
   bool hasUnknownAndOccupiedNeighbour18(const octomap::OcTreeKey &key, unsigned int depth = 0);
 
   void visualizeBorderPoints(const octomap::point3d &pmin, const octomap::point3d &pmax, unsigned int depth = 0);
+
+  octomap::point3d transformToMapFrame(const octomap::point3d &p);
+  geometry_msgs::Pose transformToMapFrame(const geometry_msgs::Pose &p);
 
   octomap::point3d transformToWorkspace(const octomap::point3d &p);
   geometry_msgs::Pose transformToWorkspace(const geometry_msgs::Pose &p);

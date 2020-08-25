@@ -14,6 +14,8 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, co
   samplingTree(NULL),
   wsMin(-FLT_MAX, -FLT_MAX, -FLT_MAX),
   wsMax(FLT_MAX, FLT_MAX, FLT_MAX),
+  stMin(-FLT_MAX, -FLT_MAX, -FLT_MAX),
+  stMax(FLT_MAX, FLT_MAX, FLT_MAX),
   tfBuffer(ros::Duration(30)),
   tfListener(tfBuffer),
   depthCloudSub(nh, PC_TOPIC, 1),
@@ -38,7 +40,7 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, co
   poseArrayPub = nh.advertise<geometry_msgs::PoseArray>("vp_array", 1);
   workspaceTreePub = nh.advertise<octomap_msgs::Octomap>("workspace_tree", 1, true);
   samplingTreePub = nh.advertise<octomap_msgs::Octomap>("sampling_tree", 1, true);
-  cubeVisPub = nh.advertise<visualization_msgs::Marker>("cube_vis", 1);
+  cubeVisPub = nh.advertise<visualization_msgs::Marker>("cube_vis", 1, true);
 
   plannerStatePub = nhp.advertise<roi_viewpoint_planner_msgs::PlannerState>("planner_state", 1, true);
 
@@ -124,6 +126,19 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, co
 
   if (samplingTree)
   {
+    stMin = octomap::point3d(FLT_MAX, FLT_MAX, FLT_MAX);
+    stMax = octomap::point3d(-FLT_MAX, -FLT_MAX, -FLT_MAX);
+    for (auto it = samplingTree->begin_leafs(), end = samplingTree->end_leafs(); it != end; it++)
+    {
+      octomap::point3d coord = it.getCoordinate();
+      if (coord.x() < stMin.x()) stMin.x() = coord.x();
+      if (coord.y() < stMin.y()) stMin.y() = coord.y();
+      if (coord.z() < stMin.z()) stMin.z() = coord.z();
+      if (coord.x() > stMax.x()) stMax.x() = coord.x();
+      if (coord.y() > stMax.y()) stMax.y() = coord.y();
+      if (coord.z() > stMax.z()) stMax.z() = coord.z();
+    }
+
     octomap_msgs::Octomap st_msg;
     st_msg.header.frame_id = ws_frame;
     st_msg.header.stamp = ros::Time(0);
@@ -140,7 +155,7 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, co
 
   //syncDets.registerCallback(registerRoi);
 
-  roiSub = nh.subscribe("//detect_roi/results", 1, &ViewpointPlanner::registerPointcloudWithRoi, this);
+  roiSub = nh.subscribe("/detect_roi/results", 1, &ViewpointPlanner::registerPointcloudWithRoi, this);
 
   if (workspaceTree)
   {
@@ -148,7 +163,7 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, co
 
     visualization_msgs::Marker ws_cube;
     ws_cube.header.frame_id = ws_frame;
-    ws_cube.header.stamp = ros::Time::now();
+    ws_cube.header.stamp = ros::Time(0);
     ws_cube.ns = "ws_cube";
     ws_cube.id = 0;
     ws_cube.type = visualization_msgs::Marker::LINE_LIST;
@@ -157,7 +172,7 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, co
     ws_cube.color.g = 0.0;
     ws_cube.color.b = 0.0;
     ws_cube.scale.x = 0.002;
-    addCubeEdges(wsMin, wsMax, ws_cube.points);
+    addCubeEdges(stMin, stMax, ws_cube.points);
 
     cubeVisPub.publish(ws_cube);
   }
@@ -1037,6 +1052,48 @@ void ViewpointPlanner::visualizeBorderPoints(const octomap::point3d &pmin, const
   pointVisPub.publish( marker );
 }
 
+octomap::point3d ViewpointPlanner::transformToMapFrame(const octomap::point3d &p)
+{
+  if (map_frame == ws_frame)
+    return p;
+
+  geometry_msgs::TransformStamped trans;
+  try
+  {
+    trans = tfBuffer.lookupTransform(map_frame, ws_frame, ros::Time(0));
+  }
+  catch (const tf2::TransformException &e)
+  {
+    ROS_ERROR_STREAM("Couldn't find transform to ws frame in transformToWorkspace: " << e.what());
+    return p;
+  }
+
+  octomap::point3d pt;
+  tf2::doTransform(p, pt, trans);
+  return pt;
+}
+
+geometry_msgs::Pose ViewpointPlanner::transformToMapFrame(const geometry_msgs::Pose &p)
+{
+  if (map_frame == ws_frame)
+    return p;
+
+  geometry_msgs::TransformStamped trans;
+  try
+  {
+    trans = tfBuffer.lookupTransform(map_frame, ws_frame, ros::Time(0));
+  }
+  catch (const tf2::TransformException &e)
+  {
+    ROS_ERROR_STREAM("Couldn't find transform to ws frame in transformToWorkspace: " << e.what());
+    return p;
+  }
+
+  geometry_msgs::Pose pt;
+  tf2::doTransform(p, pt, trans);
+  return pt;
+}
+
 octomap::point3d ViewpointPlanner::transformToWorkspace(const octomap::point3d &p)
 {
   if (map_frame == ws_frame)
@@ -1215,20 +1272,34 @@ std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleContourPoints(c
   tf2::Vector3 viewDir = camMat.getColumn(0);
   std::vector<octomap::OcTreeKey> contourKeys;
   std::vector<Viewpoint> sampled_vps;
-  for (auto it = planningTree.begin_leafs_bbx(wsMin, wsMax), end = planningTree.end_leafs_bbx(); it != end; it++)
+  //size_t total_nodes = 0, jumped_nodes = 0, rejected_nodes = 0, free_nodes = 0;
+  octomap::point3d stMin_tf = transformToMapFrame(stMin), stMax_tf = transformToMapFrame(stMax);
+  for (size_t i = 0; i < 3; i++)
   {
+    if (stMin_tf(i) > stMax_tf(i))
+      std::swap(stMin_tf(i), stMax_tf(i));
+  }
+  for (auto it = planningTree.begin_leafs_bbx(stMin_tf, stMax_tf), end = planningTree.end_leafs_bbx(); it != end; it++)
+  {
+    //total_nodes++;
     if (samplingTree != NULL && samplingTree->search(transformToWorkspace(it.getCoordinate())) == NULL) // sampling tree specified and sampled point not in sampling tree
     {
+      //jumped_nodes++;
       continue;
     }
     if (it->getLogOdds() < 0) // is node free; TODO: replace with bounds later
     {
+      //free_nodes++;
       if (hasUnknownAndOccupiedNeighbour6(it.getKey()))
       {
         contourKeys.push_back(it.getKey());
       }
+      //else
+      //  rejected_nodes++;
     }
   }
+
+  //ROS_INFO_STREAM("Nodes (T, J, R, F): " << total_nodes << ", " << jumped_nodes << ", " << rejected_nodes << ", " << free_nodes);
 
   if (contourKeys.empty())
   {
@@ -1895,7 +1966,7 @@ void ViewpointPlanner::plannerLoop()
       publishViewpointVisualizations(roiContourVps, "roiContourPoints", COLOR_RED);
     }
 
-    if (mode == SAMPLE_BORDER || ((mode == SAMPLE_AUTOMATIC || mode == SAMPLE_CONTOURS) && contourVps.empty() && roiContourVps.empty()))
+    if (mode == SAMPLE_BORDER /*|| ((mode == SAMPLE_AUTOMATIC || mode == SAMPLE_CONTOURS) && contourVps.empty() && roiContourVps.empty())*/)
     {
       borderVps = sampleBorderPoints(box_min, box_max, camOrig, camQuat);
       std::make_heap(borderVps.begin(), borderVps.end(), vpComp);
@@ -1911,8 +1982,8 @@ void ViewpointPlanner::plannerLoop()
 
     std::pair<std::vector<octomap::point3d>, std::vector<octomap::point3d>> clusterCentersWithVol = planningTree.getClusterCentersWithVolume();
     std::vector<octomap::point3d> &clusterCenters = clusterCentersWithVol.first;
-    std::vector<octomap::point3d> &clusterVolumes = clusterCentersWithVol.second;
-    publishCubeVisualization(cubeVisPub, clusterCenters, clusterVolumes);
+    //std::vector<octomap::point3d> &clusterVolumes = clusterCentersWithVol.second;
+    //publishCubeVisualization(cubeVisPub, clusterCenters, clusterVolumes);
     /*ROS_INFO_STREAM("Found " << clusterCenters.size() << " clusters for " << planningTree.getRoiSize() << " ROI cells");
     for(size_t i = 0; i < clusterCenters.size(); i++)
     {
@@ -1960,16 +2031,16 @@ void ViewpointPlanner::plannerLoop()
         ROS_INFO_STREAM("Using ROI viewpoint targeting");
         return roiAdjacentVps; //roiContourVps;
       }
-      else if (!contourVps.empty())
+      else// if (!contourVps.empty())
       {
         ROS_INFO_STREAM("Using exploration viewpoints");
         return contourVps;
       }
-      else
+      /*else
       {
         ROS_INFO_STREAM("Using border viewpoints");
         return borderVps;
-      }
+      }*/
     }();
 
     for (/*std::make_heap(nextViewpoints.begin(), nextViewpoints.end(), vpComp)*/; !nextViewpoints.empty(); std::pop_heap(nextViewpoints.begin(), nextViewpoints.end(), vpComp), nextViewpoints.pop_back())
