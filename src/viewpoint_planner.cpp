@@ -37,6 +37,7 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, co
   viewArrowVisPub = nh.advertise<visualization_msgs::MarkerArray>("roi_vp_marker", 1);
   poseArrayPub = nh.advertise<geometry_msgs::PoseArray>("vp_array", 1);
   workspaceTreePub = nh.advertise<octomap_msgs::Octomap>("workspace_tree", 1, true);
+  samplingTreePub = nh.advertise<octomap_msgs::Octomap>("sampling_tree", 1, true);
   cubeVisPub = nh.advertise<visualization_msgs::Marker>("cube_vis", 1);
 
   plannerStatePub = nhp.advertise<roi_viewpoint_planner_msgs::PlannerState>("planner_state", 1, true);
@@ -92,7 +93,7 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, co
 
       octomap_msgs::Octomap ws_msg;
       ws_msg.header.frame_id = ws_frame;
-      ws_msg.header.stamp = ros::Time::now();
+      ws_msg.header.stamp = ros::Time(0);
       bool msg_generated = octomap_msgs::fullMapToMsg(*workspaceTree, ws_msg);
       if (msg_generated)
       {
@@ -121,6 +122,17 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, co
     samplingTree = workspaceTree;
   }
 
+  if (samplingTree)
+  {
+    octomap_msgs::Octomap st_msg;
+    st_msg.header.frame_id = ws_frame;
+    st_msg.header.stamp = ros::Time(0);
+    bool msg_generated = octomap_msgs::fullMapToMsg(*samplingTree, st_msg);
+    if (msg_generated)
+    {
+      samplingTreePub.publish(st_msg);
+    }
+  }
 
   //depthCloudSub.registerCallback(&ViewpointPlanner::registerNewScan, this);
   //tfCloudFilter.registerCallback(&ViewpointPlanner::registerNewScan, this);
@@ -1758,6 +1770,9 @@ bool ViewpointPlanner::moveToState(const std::vector<double> &joint_values, bool
 {
   kinematic_state->setJointGroupPositions(joint_model_group, joint_values);
   manipulator_group.setJointValueTarget(*kinematic_state);
+
+  //manipulator_group.setPathConstraints();
+  //manipulator_group.setTrajectoryConstraints();
 
   moveit::planning_interface::MoveGroupInterface::Plan plan;
   bool success = (manipulator_group.plan(plan) == moveit::planning_interface::MoveItErrorCode::SUCCESS);

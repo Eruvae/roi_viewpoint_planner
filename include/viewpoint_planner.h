@@ -87,6 +87,7 @@ private:
   ros::Publisher viewArrowVisPub;
   ros::Publisher poseArrayPub;
   ros::Publisher workspaceTreePub;
+  ros::Publisher samplingTreePub;
   ros::Publisher cubeVisPub;
   //ros::Publisher planningScenePub;
 

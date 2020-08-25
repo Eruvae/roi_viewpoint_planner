@@ -170,6 +170,7 @@ add_definitions(
 add_executable(planner_node src/planner_node.cpp src/viewpoint_planner.cpp)
 add_executable(evaluate_planner src/evaluate_planner.cpp)
 add_executable(generate_gt_octree src/generate_gt_octree.cpp)
+add_executable(workspace_publisher src/workspace_publisher.cpp)
 
 ## Rename C++ executable without prefix
 ## The above recommended prefix causes long target names, the following renames the
@@ -183,6 +184,7 @@ add_executable(generate_gt_octree src/generate_gt_octree.cpp)
 add_dependencies(planner_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 add_dependencies(evaluate_planner ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 add_dependencies(generate_gt_octree ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+add_dependencies(workspace_publisher ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 ## Specify libraries to link a library or executable target against
 # target_link_libraries(${PROJECT_NAME}_node
@@ -191,6 +193,7 @@ add_dependencies(generate_gt_octree ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin
 target_link_libraries(planner_node ${catkin_LIBRARIES} ${OCTOMAP_LIBRARIES})
 target_link_libraries(evaluate_planner ${catkin_LIBRARIES} ${OCTOMAP_LIBRARIES} ${YAMLCPP_LIBRARIES} ${PCL_LIBRARIES})
 target_link_libraries(generate_gt_octree ${catkin_LIBRARIES} ${OCTOMAP_LIBRARIES} ${YAMLCPP_LIBRARIES})
+target_link_libraries(workspace_publisher ${catkin_LIBRARIES} ${OCTOMAP_LIBRARIES})
 
 #############
 ## Install ##
