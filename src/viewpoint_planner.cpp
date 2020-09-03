@@ -859,7 +859,7 @@ void ViewpointPlanner::sampleAroundROICenter(const octomap::point3d &center, con
 
 }
 
-double ViewpointPlanner::computeExpectedRayIGinWorkspace(const octomap::KeyRay &ray)
+double ViewpointPlanner::computeExpectedRayIGinSamplingTree(const octomap::KeyRay &ray)
 {
   double expected_gain = 0;
   //double curProb = 1;
@@ -900,7 +900,7 @@ double ViewpointPlanner::computeExpectedRayIGinWorkspace(const octomap::KeyRay &
   return expected_gain;
 }
 
-double ViewpointPlanner::computeViewpointWorkspaceValue(const octomap::pose6d &viewpoint, const double &hfov, size_t x_steps, size_t y_steps, const double &maxRange, bool use_roi_weighting)
+double ViewpointPlanner::computeViewpointSamplingValue(const octomap::pose6d &viewpoint, const double &hfov, size_t x_steps, size_t y_steps, const double &maxRange, bool use_roi_weighting)
 {
   double f_rec =  2 * tan(hfov / 2) / (double)x_steps;
   double cx = (double)x_steps / 2.0;
@@ -917,7 +917,7 @@ double ViewpointPlanner::computeViewpointWorkspaceValue(const octomap::pose6d &v
       end = viewpoint.transform(end);
       octomap::KeyRay ray;
       planningTree.computeRayKeys(viewpoint.trans(), end, ray);
-      double gain = computeExpectedRayIGinWorkspace(ray);
+      double gain = computeExpectedRayIGinSamplingTree(ray);
       //ROS_INFO_STREAM("Ray (" << i << ", " << j << ") from " << viewpoint.trans() << " to " << end << ": " << ray.size() << " Keys, Gain: " << gain);
       value += gain;
     }
@@ -1307,7 +1307,7 @@ std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleContourPoints(c
     return sampled_vps;
   }
 
-  const size_t MAX_SAMPLES = 30;
+  const size_t MAX_SAMPLES = 100;
 
   std::vector<octomap::OcTreeKey> selected_keys;
   std::sample(contourKeys.begin(), contourKeys.end(), std::back_inserter(selected_keys),
@@ -1341,7 +1341,7 @@ std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleContourPoints(c
 
     vp.target = contourPoint;
     octomap::pose6d viewpose(vpOrig, octomath::Quaternion(viewQuat.w(), viewQuat.x(), viewQuat.y(), viewQuat.z()));
-    vp.infoGain = computeViewpointWorkspaceValue(viewpose, 80.0 * M_PI / 180.0, 8, 6, sensor_max_range); // planningTree.computeViewpointValue(viewpose, 80.0 * M_PI / 180.0, 8, 6, sensor_max_range, false);
+    vp.infoGain = computeViewpointSamplingValue(viewpose, 80.0 * M_PI / 180.0, 8, 6, sensor_max_range); // planningTree.computeViewpointValue(viewpose, 80.0 * M_PI / 180.0, 8, 6, sensor_max_range, false);
     vp.distance = (vpOrig - camPos).norm();
     vp.utility = vp.infoGain - 0.2 * vp.distance;
     vp.isFree = true;
@@ -1584,6 +1584,68 @@ std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleRoiAdjecentCoun
 
 }
 
+std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleExplorationPoints(const octomap::point3d &camPos, const tf2::Quaternion &camQuat)
+{
+  tf2::Matrix3x3 camMat(camQuat);
+  tf2::Vector3 viewDir = camMat.getColumn(0);
+  std::vector<Viewpoint> sampledPoints;
+
+  octomap::point3d wsMin_tf = transformToMapFrame(wsMin), wsMax_tf = transformToMapFrame(wsMax);
+  octomap::point3d stMin_tf = transformToMapFrame(stMin), stMax_tf = transformToMapFrame(stMax);
+
+  for (size_t i = 0; i < 3; i++)
+  {
+    if (wsMin_tf(i) > wsMax_tf(i))
+      std::swap(wsMin_tf(i), wsMax_tf(i));
+
+    if (stMin_tf(i) > stMax_tf(i))
+      std::swap(stMin_tf(i), stMax_tf(i));
+  }
+
+  std::uniform_real_distribution<double> wsxDist(wsMin_tf.x(), wsMax_tf.x());
+  std::uniform_real_distribution<double> wsyDist(wsMin_tf.y(), wsMax_tf.y());
+  std::uniform_real_distribution<double> wszDist(wsMin_tf.z(), wsMax_tf.z());
+
+  std::uniform_real_distribution<double> stxDist(stMin_tf.x(), stMax_tf.x());
+  std::uniform_real_distribution<double> styDist(stMin_tf.y(), stMax_tf.y());
+  std::uniform_real_distribution<double> stzDist(stMin_tf.z(), stMax_tf.z());
+
+  const size_t TOTAL_SAMPLE_TRIES = 30;
+
+  for (size_t i = 0; i < TOTAL_SAMPLE_TRIES; i++)
+  {
+    Viewpoint vp;
+    octomap::point3d source(wsxDist(random_engine), wsyDist(random_engine), wszDist(random_engine));
+    octomap::point3d target(stxDist(random_engine), styDist(random_engine), stzDist(random_engine));
+    octomath::Vector3 dirVec = target - source;
+    dirVec.normalize();
+    tf2::Quaternion viewQuat = dirVecToQuat(dirVec, camQuat, viewDir);
+    vp.pose.position = octomap::pointOctomapToMsg(source);
+    vp.pose.orientation = tf2::toMsg(viewQuat);
+
+    if (workspaceTree != NULL && workspaceTree->search(transformToWorkspace(source)) == NULL) // workspace specified and sampled point not in workspace
+    {
+      continue;
+    }
+    if (compute_ik_when_sampling)
+    {
+      if (!manipulator_group.setJointValueTarget(transformToWorkspace(vp.pose), "camera_link"))
+        continue;
+
+      vp.joint_target.reset(new robot_state::RobotState(manipulator_group.getJointValueTarget()));
+    }
+
+    vp.target = target;
+    octomap::pose6d viewpose(source, octomath::Quaternion(viewQuat.w(), viewQuat.x(), viewQuat.y(), viewQuat.z()));
+    vp.infoGain = computeViewpointSamplingValue(viewpose, 80.0 * M_PI / 180.0, 8, 6, 5.0);
+    vp.distance = (source - camPos).norm();
+    vp.utility = vp.infoGain - 0.2 * vp.distance;
+    vp.isFree = true;
+    sampledPoints.push_back(vp);
+  }
+  return sampledPoints;
+}
+
 std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleBorderPoints(const octomap::point3d &pmin, const octomap::point3d &pmax, const octomap::point3d &camPos, const tf2::Quaternion &camQuat)
 {
   tf2::Matrix3x3 camMat(camQuat);
@@ -1643,7 +1705,7 @@ std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleBorderPoints(co
 
     vp.target = point + dirVec;
     octomap::pose6d viewpose(point, octomath::Quaternion(viewQuat.w(), viewQuat.x(), viewQuat.y(), viewQuat.z()));
-    vp.infoGain = computeViewpointWorkspaceValue(viewpose, 80.0 * M_PI / 180.0, 8, 6, 5.0);
+    vp.infoGain = computeViewpointSamplingValue(viewpose, 80.0 * M_PI / 180.0, 8, 6, 5.0);
     vp.distance = (point - camPos).norm();
     vp.utility = vp.infoGain - 0.2 * vp.distance;
     vp.isFree = true;
@@ -1945,7 +2007,7 @@ void ViewpointPlanner::plannerLoop()
     tf2::Quaternion camQuat;
     tf2::fromMsg(camFrameTf.transform.rotation, camQuat);
 
-    std::vector<Viewpoint> contourVps, borderVps, roiContourVps, roiCenterVps, roiAdjacentVps;
+    std::vector<Viewpoint> contourVps, borderVps, roiContourVps, roiCenterVps, roiAdjacentVps, explorationVps;
     auto vpComp = [](const Viewpoint &a, const Viewpoint &b)
     {
       //return a.distance > b.distance;
@@ -1963,7 +2025,7 @@ void ViewpointPlanner::plannerLoop()
     {
       roiContourVps = sampleRoiContourPoints(camOrig, camQuat);
       std::make_heap(roiContourVps.begin(), roiContourVps.end(), vpComp);
-      publishViewpointVisualizations(roiContourVps, "roiContourPoints", COLOR_RED);
+      publishViewpointVisualizations(roiContourVps, "roiContourPoints", COLOR_ORANGE);
     }
 
     if (mode == SAMPLE_BORDER /*|| ((mode == SAMPLE_AUTOMATIC || mode == SAMPLE_CONTOURS) && contourVps.empty() && roiContourVps.empty())*/)
@@ -1978,6 +2040,13 @@ void ViewpointPlanner::plannerLoop()
       roiAdjacentVps = sampleRoiAdjecentCountours(camOrig, camQuat);
       std::make_heap(roiAdjacentVps.begin(), roiAdjacentVps.end(), vpComp);
       publishViewpointVisualizations(roiAdjacentVps, "roiAdjPoints", COLOR_RED);
+    }
+
+    if (mode == SAMPLE_EXPLORATION)
+    {
+      explorationVps = sampleExplorationPoints(camOrig, camQuat);
+      std::make_heap(explorationVps.begin(), explorationVps.end(), vpComp);
+      publishViewpointVisualizations(explorationVps, "explorationPoints", COLOR_VIOLET);
     }
 
     std::pair<std::vector<octomap::point3d>, std::vector<octomap::point3d>> clusterCentersWithVol = planningTree.getClusterCentersWithVolume();
@@ -2008,7 +2077,7 @@ void ViewpointPlanner::plannerLoop()
     {
       std::vector<Viewpoint> roiViewpoints = sampleAroundMultiROICenters(clusterCenters, camOrig, camQuat);
       std::make_heap(roiViewpoints.begin(), roiViewpoints.end(), vpComp);
-      publishViewpointVisualizations(roiViewpoints, "roiPoints", COLOR_RED);
+      publishViewpointVisualizations(roiViewpoints, "roiPoints", COLOR_BROWN);
     }
 
     //std::make_heap(roiViewpoints.begin(), roiViewpoints.end(), vpComp);

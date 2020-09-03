@@ -14,6 +14,9 @@
 const std_msgs::ColorRGBA COLOR_RED = []{std_msgs::ColorRGBA c; c.r = 1.f; c.g = 0.f; c.b = 0.f; c.a = 1.f; return c; } ();
 const std_msgs::ColorRGBA COLOR_GREEN = []{std_msgs::ColorRGBA c; c.r = 0.f; c.g = 1.f; c.b = 0.f; c.a = 1.f; return c; } ();
 const std_msgs::ColorRGBA COLOR_BLUE = []{std_msgs::ColorRGBA c; c.r = 0.f; c.g = 0.f; c.b = 1.f; c.a = 1.f; return c; } ();
+const std_msgs::ColorRGBA COLOR_VIOLET = []{std_msgs::ColorRGBA c; c.r = 0.6f; c.g = 0.2f; c.b = 0.8f; c.a = 1.f; return c; } ();
+const std_msgs::ColorRGBA COLOR_ORANGE = []{std_msgs::ColorRGBA c; c.r = 1.0f; c.g = 0.5f; c.b = 0.f; c.a = 1.f; return c; } ();
+const std_msgs::ColorRGBA COLOR_BROWN = []{std_msgs::ColorRGBA c; c.r = 0.8f; c.g = 0.4f; c.b = 0.1f; c.a = 1.f; return c; } ();
 
 static inline void addEdgesFromCorner(const geometry_msgs::Point &corner, const geometry_msgs::Point &opp, std::vector<geometry_msgs::Point> &list)
 {

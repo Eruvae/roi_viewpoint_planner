@@ -147,7 +147,8 @@ public:
     SAMPLE_CONTOURS = 4,
     SAMPLE_BORDER = 5,
     SAMPLE_ROI_ADJACENT = 6,
-    NUM_MODES = 7 // Should be kept as last element if new modes are added
+    SAMPLE_EXPLORATION = 7,
+    NUM_MODES = 8 // Should be kept as last element if new modes are added
   } mode;
 
   bool execute_plan;
@@ -250,9 +251,9 @@ public:
 
   void sampleAroundROICenter(const octomap::point3d &center,  const octomap::point3d &camPos, const tf2::Quaternion &camQuat, size_t roiID = 0);
 
-  double computeExpectedRayIGinWorkspace(const octomap::KeyRay &ray);
+  double computeExpectedRayIGinSamplingTree(const octomap::KeyRay &ray);
 
-  double computeViewpointWorkspaceValue(const octomap::pose6d &viewpoint, const double &hfov, size_t x_steps, size_t y_steps, const double &maxRange, bool use_roi_weighting = true);
+  double computeViewpointSamplingValue(const octomap::pose6d &viewpoint, const double &hfov, size_t x_steps, size_t y_steps, const double &maxRange, bool use_roi_weighting = true);
 
   bool hasDirectUnknownNeighbour(const octomap::OcTreeKey &key, unsigned int depth = 0);
 
@@ -283,6 +284,8 @@ public:
   std::vector<Viewpoint> sampleRoiContourPoints(const octomap::point3d &camPos, const tf2::Quaternion &camQuat);
 
   std::vector<Viewpoint> sampleRoiAdjecentCountours(const octomap::point3d &camPos, const tf2::Quaternion &camQuat);
+
+  std::vector<Viewpoint> sampleExplorationPoints(const octomap::point3d &camPos, const tf2::Quaternion &camQuat);
 
   std::vector<Viewpoint> sampleBorderPoints(const octomap::point3d &pmin, const octomap::point3d &pmax, const octomap::point3d &camPos, const tf2::Quaternion &camQuat);
 
