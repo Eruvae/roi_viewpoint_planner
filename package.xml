@@ -70,6 +70,7 @@
   <depend>dynamic_reconfigure</depend>
   <depend>trolley_remote</depend>
   <depend>roi_viewpoint_planner_msgs</depend>
+  <depend>rosbag_storage</depend>
 
   <build_depend>message_generation</build_depend>
   <exec_depend>message_runtime</exec_depend>

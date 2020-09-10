@@ -3,6 +3,7 @@
 
 #include "viewpoint_planner.h"
 #include "roi_viewpoint_planner_msgs/ChangePlannerMode.h"
+#include "roi_viewpoint_planner_msgs/SaveOctomap.h"
 #include <std_srvs/SetBool.h>
 #include <std_srvs/Trigger.h>
 #include <boost/algorithm/string/predicate.hpp>
@@ -40,6 +41,12 @@ bool changePlannerMode(roi_viewpoint_planner_msgs::ChangePlannerMode::Request &r
   {
     res.success = false;
   }
+  return true;
+}
+
+bool saveOctomap(roi_viewpoint_planner_msgs::SaveOctomap::Request &req, roi_viewpoint_planner_msgs::SaveOctomap::Response &res)
+{
+  res.success = planner->saveOctomap();
   return true;
 }
 
@@ -124,6 +131,14 @@ void reconfigureCallback(roi_viewpoint_planner::PlannerConfig &config, uint32_t 
   {
     planner->setMaxVelocityScalingFactor(config.velocity_scaling);
   }
+  if (level & (1 << 17)) // record_map_updates
+  {
+    planner->record_map_updates = config.record_map_updates;
+  }
+  if (level & (1 << 18)) // record_viewpoints
+  {
+    planner->record_viewpoints = config.record_viewpoints;
+  }
 }
 
 int main(int argc, char **argv)
@@ -154,6 +169,7 @@ int main(int argc, char **argv)
   ros::ServiceServer changePlannerModeService = nhp.advertiseService("change_planner_mode", changePlannerMode);
   ros::ServiceServer activatePlanExecutionService = nhp.advertiseService("activate_plan_execution", activatePlanExecution);
   ros::ServiceServer saveTreeAsObjService = nhp.advertiseService("save_tree_as_obj", saveTreeAsObj);
+  ros::ServiceServer saveOctomapService = nhp.advertiseService("save_octomap", saveOctomap);
 
   dynamic_reconfigure::Server<roi_viewpoint_planner::PlannerConfig> server(nhp);
 
@@ -170,4 +186,6 @@ int main(int argc, char **argv)
   }
 
   planner->plannerLoop();
+
+  delete planner;
 }

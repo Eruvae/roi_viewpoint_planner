@@ -2,8 +2,10 @@
 
 #include <std_msgs/Bool.h>
 #include <std_srvs/Trigger.h>
+#include <roi_viewpoint_planner_msgs/ViewpointList.h>
 #include "octomap_vpp/marching_cubes.h"
 #include "octomap_vpp/octomap_transforms.h"
+#include "boost/date_time/posix_time/posix_time.hpp"
 
 ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, const std::string &wstree_file, const std::string &sampling_tree_file, double tree_resolution,
                                    const std::string &map_frame, const std::string &ws_frame) :
@@ -31,6 +33,17 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, co
   occupancyScanned(false),
   roiScanned(false)
 {
+
+  std::stringstream fDateTime;
+  const boost::posix_time::ptime curDateTime = boost::posix_time::second_clock::local_time();
+  boost::posix_time::time_facet *const timeFacet = new boost::posix_time::time_facet("%Y-%m-%d-%H-%M-%S");
+  fDateTime.imbue(std::locale(fDateTime.getloc(), timeFacet));
+  fDateTime << "plannerBag_" << curDateTime << ".bag";
+  bag_final_filename = fDateTime.str();
+  fDateTime << ".active";
+  bag_write_filename = fDateTime.str();
+  plannerBag.open(bag_write_filename, rosbag::bagmode::Write);
+
   octomapPub = nh.advertise<octomap_msgs::Octomap>("octomap", 1);
   inflatedOctomapPub = nh.advertise<octomap_msgs::Octomap>("inflated_octomap", 1);
   //pcGlobalPub = nh.advertise<sensor_msgs::PointCloud2>(PC_GLOBAL, 1);
@@ -176,6 +189,12 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, co
 
     cubeVisPub.publish(ws_cube);
   }
+}
+
+ViewpointPlanner::~ViewpointPlanner()
+{
+  plannerBag.close();
+  rename(bag_write_filename.c_str(), bag_final_filename.c_str());
 }
 
 
@@ -353,13 +372,14 @@ void ViewpointPlanner::pointCloud2ToOctomapByIndices(const sensor_msgs::PointClo
   }
 }
 
-void ViewpointPlanner::registerPointcloudWithRoi(const pointcloud_roi_msgs::PointcloudWithRoi &roi)
+void ViewpointPlanner::registerPointcloudWithRoi(const ros::MessageEvent<pointcloud_roi_msgs::PointcloudWithRoi const> &event)
 {
-  if (!insert_roi_while_moving && robotIsMoving.load())
+  if (mode == IDLE || (!insert_roi_while_moving && robotIsMoving.load()))
   {
     //ROS_INFO_STREAM("Robot is currently moving, not inserting ROI");
     return;
   }
+  const pointcloud_roi_msgs::PointcloudWithRoi &roi = *event.getMessage();
 
   #ifdef PUBLISH_PLANNING_TIMES
   ros::Time cbStartTime = ros::Time::now();
@@ -421,6 +441,11 @@ void ViewpointPlanner::registerPointcloudWithRoi(const pointcloud_roi_msgs::Poin
   {
     state.roi_scanned = true;
     plannerStatePub.publish(state);
+  }
+
+  if (record_map_updates)
+  {
+    plannerBag.write("/detect_roi/results", event);
   }
 
   #ifdef PUBLISH_PLANNING_TIMES
@@ -724,6 +749,25 @@ void ViewpointPlanner::publishViewpointVisualizations(const std::vector<Viewpoin
   last_marker_counts[ns] = viewpoints.size();
   viewArrowVisPub.publish(markers);
   poseArrayPub.publish(poseArr);
+}
+
+void ViewpointPlanner::saveViewpointsToBag(const std::vector<Viewpoint> &viewpoints, const std::string &sampling_method, const ros::Time &time)
+{
+  roi_viewpoint_planner_msgs::ViewpointList list;
+  for (const Viewpoint & vp : viewpoints)
+  {
+    roi_viewpoint_planner_msgs::Viewpoint vp_msg;
+    vp_msg.pose = vp.pose;
+    vp_msg.target = octomap::pointOctomapToMsg(vp.target);
+    vp_msg.infoGain = vp.infoGain;
+    vp_msg.distance = vp.distance;
+    vp_msg.utility = vp.utility;
+    vp_msg.isFree = vp.isFree;
+    list.viewpoints.push_back(vp_msg);
+  }
+  list.header.stamp = time;
+  list.sampling_method = sampling_method;
+  plannerBag.write("/roi_viewpoint_planner/viewpoints", time, list);
 }
 
 void ViewpointPlanner::sampleAroundROICenter(const octomap::point3d &center, const octomap::point3d &camPos, const tf2::Quaternion &camQuat, size_t roiID)
@@ -1612,6 +1656,8 @@ std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleExplorationPoin
 
   const size_t TOTAL_SAMPLE_TRIES = 30;
 
+  tree_mtx.lock();
+
   for (size_t i = 0; i < TOTAL_SAMPLE_TRIES; i++)
   {
     Viewpoint vp;
@@ -1643,6 +1689,8 @@ std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleExplorationPoin
     vp.isFree = true;
     sampledPoints.push_back(vp);
   }
+  tree_mtx.unlock();
+
   return sampledPoints;
 }
 
@@ -1952,9 +2000,22 @@ bool ViewpointPlanner::saveROIsAsObj(const std::string &file_name)
   return true;
 }
 
+bool ViewpointPlanner::saveOctomap()
+{
+  std::stringstream fDateTime;
+  const boost::posix_time::ptime curDateTime = boost::posix_time::second_clock::local_time();
+  boost::posix_time::time_facet *const timeFacet = new boost::posix_time::time_facet("%Y-%m-%d-%H-%M-%S");
+  fDateTime.imbue(std::locale(fDateTime.getloc(), timeFacet));
+  fDateTime << "planningTree_" << curDateTime << ".ot";
+  tree_mtx.lock();
+  bool result = planningTree.write(fDateTime.str());
+  tree_mtx.unlock();
+  return result;
+}
+
 void ViewpointPlanner::plannerLoop()
 {
-  for (ros::Rate rate(100); ros::ok(); rate.sleep())
+  for (ros::Rate rate(10); ros::ok(); rate.sleep())
   {
     /*std::vector<double> mg_joint_values = manipulator_group.getCurrentJointValues();
     kinematic_state->setJointGroupPositions(joint_model_group, mg_joint_values);
@@ -1964,12 +2025,12 @@ void ViewpointPlanner::plannerLoop()
     auto quaternion = Eigen::Quaterniond(stateTf.linear()).coeffs();
     octomap::pose6d viewpoint(octomap::point3d(translation[0], translation[1], translation[2]), octomath::Quaternion(quaternion[0], quaternion[1], quaternion[2], quaternion[3]));*/
 
-    if ((wait_for_occ_scan && !occupancyScanned.load()) || (wait_for_roi_scan && !roiScanned.load()))
+    if (mode == IDLE || (wait_for_occ_scan && !occupancyScanned.load()) || (wait_for_roi_scan && !roiScanned.load()))
       continue;
 
     publishMap();
 
-    if (mode == IDLE)
+    if (mode == MAP_ONLY)
       continue;
 
     /*tree_mtx.lock();
@@ -2014,18 +2075,22 @@ void ViewpointPlanner::plannerLoop()
       return a.utility < b.utility;
     };
 
-    if (mode == SAMPLE_CONTOURS || mode == SAMPLE_AUTOMATIC)
+    if (mode == SAMPLE_CONTOURS/* || mode == SAMPLE_AUTOMATIC*/)
     {
       contourVps = sampleContourPoints(camOrig, camQuat);
       std::make_heap(contourVps.begin(), contourVps.end(), vpComp);
       publishViewpointVisualizations(contourVps, "contourPoints", COLOR_GREEN);
+      if (record_viewpoints)
+        saveViewpointsToBag(contourVps, "contourPoints", ros::Time::now());
     }
 
-    if (mode == SAMPLE_ROI_CONTOURS/* || mode == SAMPLE_AUTOMATIC*/)
+    if (mode == SAMPLE_ROI_CONTOURS || mode == SAMPLE_AUTOMATIC)
     {
       roiContourVps = sampleRoiContourPoints(camOrig, camQuat);
       std::make_heap(roiContourVps.begin(), roiContourVps.end(), vpComp);
       publishViewpointVisualizations(roiContourVps, "roiContourPoints", COLOR_ORANGE);
+      if (record_viewpoints)
+        saveViewpointsToBag(roiContourVps, "roiContourPoints", ros::Time::now());
     }
 
     if (mode == SAMPLE_BORDER /*|| ((mode == SAMPLE_AUTOMATIC || mode == SAMPLE_CONTOURS) && contourVps.empty() && roiContourVps.empty())*/)
@@ -2033,20 +2098,26 @@ void ViewpointPlanner::plannerLoop()
       borderVps = sampleBorderPoints(box_min, box_max, camOrig, camQuat);
       std::make_heap(borderVps.begin(), borderVps.end(), vpComp);
       publishViewpointVisualizations(borderVps, "borderPoints", COLOR_BLUE);
+      if (record_viewpoints)
+        saveViewpointsToBag(borderVps, "borderPoints", ros::Time::now());
     }
 
-    if (mode == SAMPLE_ROI_ADJACENT || mode == SAMPLE_AUTOMATIC)
+    if (mode == SAMPLE_ROI_ADJACENT/* || mode == SAMPLE_AUTOMATIC*/)
     {
       roiAdjacentVps = sampleRoiAdjecentCountours(camOrig, camQuat);
       std::make_heap(roiAdjacentVps.begin(), roiAdjacentVps.end(), vpComp);
       publishViewpointVisualizations(roiAdjacentVps, "roiAdjPoints", COLOR_RED);
+      if (record_viewpoints)
+        saveViewpointsToBag(roiAdjacentVps, "roiAdjPoints", ros::Time::now());
     }
 
-    if (mode == SAMPLE_EXPLORATION)
+    if (mode == SAMPLE_EXPLORATION || mode == SAMPLE_AUTOMATIC)
     {
       explorationVps = sampleExplorationPoints(camOrig, camQuat);
       std::make_heap(explorationVps.begin(), explorationVps.end(), vpComp);
       publishViewpointVisualizations(explorationVps, "explorationPoints", COLOR_VIOLET);
+      if (record_viewpoints)
+        saveViewpointsToBag(explorationVps, "explorationPoints", ros::Time::now());
     }
 
     std::pair<std::vector<octomap::point3d>, std::vector<octomap::point3d>> clusterCentersWithVol = planningTree.getClusterCentersWithVolume();
@@ -2078,6 +2149,8 @@ void ViewpointPlanner::plannerLoop()
       std::vector<Viewpoint> roiViewpoints = sampleAroundMultiROICenters(clusterCenters, camOrig, camQuat);
       std::make_heap(roiViewpoints.begin(), roiViewpoints.end(), vpComp);
       publishViewpointVisualizations(roiViewpoints, "roiPoints", COLOR_BROWN);
+      if (record_viewpoints)
+        saveViewpointsToBag(roiViewpoints, "roiPoints", ros::Time::now());
     }
 
     //std::make_heap(roiViewpoints.begin(), roiViewpoints.end(), vpComp);
@@ -2094,16 +2167,17 @@ void ViewpointPlanner::plannerLoop()
       else if (mode == SAMPLE_CONTOURS) return contourVps.empty() ? borderVps : contourVps;
       else if (mode == SAMPLE_BORDER) return borderVps;
       else if (mode == SAMPLE_ROI_ADJACENT) return roiAdjacentVps;
+      else if (mode == SAMPLE_EXPLORATION) return explorationVps;
 
-      if (roiAdjacentVps.size() > 0 && roiAdjacentVps.front().utility > 0.2)
+      if (roiContourVps.size() > 0 && roiContourVps.front().utility > 0.2)
       {
         ROS_INFO_STREAM("Using ROI viewpoint targeting");
-        return roiAdjacentVps; //roiContourVps;
+        return roiContourVps;
       }
       else// if (!contourVps.empty())
       {
         ROS_INFO_STREAM("Using exploration viewpoints");
-        return contourVps;
+        return explorationVps;
       }
       /*else
       {

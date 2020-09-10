@@ -2,6 +2,7 @@
 #define VIEWPOINT_PLANNER_H
 
 #include <ros/ros.h>
+#include <rosbag/bag.h>
 #include <message_filters/subscriber.h>
 #include <message_filters/cache.h>
 #include <message_filters/sync_policies/approximate_time.h>
@@ -96,6 +97,10 @@ private:
 
   ros::ServiceClient requestExecutionConfirmation;
 
+  std::string bag_write_filename;
+  std::string bag_final_filename;
+  rosbag::Bag plannerBag;
+
   boost::mutex tree_mtx;
 
   message_filters::Subscriber<sensor_msgs::PointCloud2> depthCloudSub;
@@ -141,14 +146,15 @@ public:
   enum PlannerMode
   {
     IDLE = 0,
-    SAMPLE_AUTOMATIC = 1,
-    SAMPLE_ROI_CENTERS = 2,
-    SAMPLE_ROI_CONTOURS = 3,
-    SAMPLE_CONTOURS = 4,
-    SAMPLE_BORDER = 5,
-    SAMPLE_ROI_ADJACENT = 6,
-    SAMPLE_EXPLORATION = 7,
-    NUM_MODES = 8 // Should be kept as last element if new modes are added
+    MAP_ONLY = 1,
+    SAMPLE_AUTOMATIC = 2,
+    SAMPLE_ROI_CENTERS = 3,
+    SAMPLE_ROI_CONTOURS = 4,
+    SAMPLE_CONTOURS = 5,
+    SAMPLE_BORDER = 6,
+    SAMPLE_ROI_ADJACENT = 7,
+    SAMPLE_EXPLORATION = 8,
+    NUM_MODES = 9 // Should be kept as last element if new modes are added
   } mode;
 
   bool execute_plan;
@@ -169,6 +175,9 @@ public:
   bool use_cartesian_motion;
   bool compute_ik_when_sampling;
 
+  bool record_map_updates;
+  bool record_viewpoints;
+
   // Planner parameters end
 
   struct Viewpoint
@@ -184,6 +193,8 @@ public:
 
   ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, const std::string &wstree_file, const std::string &sampling_tree_file, double tree_resolution,
                    const std::string &map_frame, const std::string &ws_frame);
+
+  ~ViewpointPlanner();
 
   // Set planner parameters
 
@@ -221,7 +232,7 @@ public:
   void pointCloud2ToOctomapByIndices(const sensor_msgs::PointCloud2 &cloud, const std::vector<int> &indices,  const geometry_msgs::Transform &transform,
                                      octomap::Pointcloud &inlierCloud, octomap::Pointcloud &outlierCloud, octomap::Pointcloud &fullCloud);
 
-  void registerPointcloudWithRoi(const pointcloud_roi_msgs::PointcloudWithRoi &roi);
+  void registerPointcloudWithRoi(const ros::MessageEvent<pointcloud_roi_msgs::PointcloudWithRoi const> &event);
 
   //void registerNewScan(const sensor_msgs::PointCloud2ConstPtr &pc_msg);
 
@@ -248,6 +259,8 @@ public:
   tf2::Quaternion dirVecToQuat(octomath::Vector3 dirVec, const tf2::Quaternion &camQuat, const tf2::Vector3 &viewDir);
 
   void publishViewpointVisualizations(const std::vector<Viewpoint> &viewpoints, const std::string &ns, const std_msgs::ColorRGBA &color = COLOR_RED);
+
+  void saveViewpointsToBag(const std::vector<Viewpoint> &viewpoints, const std::string &sampling_method, const ros::Time &time);
 
   void sampleAroundROICenter(const octomap::point3d &center,  const octomap::point3d &camPos, const tf2::Quaternion &camQuat, size_t roiID = 0);
 
@@ -304,6 +317,8 @@ public:
   bool saveTreeAsObj(const std::string &file_name);
 
   bool saveROIsAsObj(const std::string &file_name);
+
+  bool saveOctomap();
 
   void plannerLoop();
 };

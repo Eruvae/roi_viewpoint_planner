@@ -23,6 +23,7 @@ set (CATKIN_DEPENDENCIES
     dynamic_reconfigure
     trolley_remote
     roi_viewpoint_planner_msgs
+    rosbag_storage
 )
 
 ## Find catkin macros and libraries
