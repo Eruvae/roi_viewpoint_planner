@@ -9,7 +9,7 @@
 
 ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, const std::string &wstree_file, const std::string &sampling_tree_file, double tree_resolution,
                                    const std::string &map_frame, const std::string &ws_frame) :
-  planningTree(tree_resolution),
+  planningTree(new octomap_vpp::RoiOcTree(tree_resolution)),
   map_frame(map_frame),
   ws_frame(ws_frame),
   workspaceTree(NULL),
@@ -214,7 +214,7 @@ void ViewpointPlanner::publishMap()
   map_msg.header.frame_id = map_frame;
   map_msg.header.stamp = ros::Time::now();
   tree_mtx.lock();
-  bool msg_generated = octomap_msgs::fullMapToMsg(planningTree, map_msg);
+  bool msg_generated = octomap_msgs::fullMapToMsg(*planningTree, map_msg);
   tree_mtx.unlock();
   if (msg_generated)
   {
@@ -227,12 +227,12 @@ void ViewpointPlanner::publishMap()
 
   /*tree_mtx.lock();
   ros::Time inflationStart = ros::Time::now();
-  std::shared_ptr<octomap_vpp::InflatedRoiOcTree> inflatedTree = planningTree.computeInflatedRois();
+  std::shared_ptr<octomap_vpp::InflatedRoiOcTree> inflatedTree = planningTree->computeInflatedRois();
   ros::Time inflationDone = ros::Time::now();
   tree_mtx.unlock();
   ROS_INFO_STREAM("Time for inflation: " << inflationDone - inflationStart);*/
 
-  std::shared_ptr<octomap_vpp::InflatedRoiOcTree> inflatedTree = planningTree.getInflatedRois();
+  std::shared_ptr<octomap_vpp::InflatedRoiOcTree> inflatedTree = planningTree->getInflatedRois();
 
   if (inflatedTree != nullptr)
   {
@@ -432,8 +432,8 @@ void ViewpointPlanner::registerPointcloudWithRoi(const ros::MessageEvent<pointcl
     pointCloud2ToOctomapByIndices(roi.cloud, roi.roi_indices, pcFrameTf.transform, inlierCloud, outlierCloud, fullCloud);
 
   tree_mtx.lock();
-  planningTree.insertPointCloud(fullCloud, scan_orig);
-  planningTree.insertRegionScan(inlierCloud, outlierCloud);
+  planningTree->insertPointCloud(fullCloud, scan_orig);
+  planningTree->insertRegionScan(inlierCloud, outlierCloud);
   tree_mtx.unlock();
 
   roiScanned.store(true);
@@ -518,7 +518,7 @@ void ViewpointPlanner::registerPointcloudWithRoi(const ros::MessageEvent<pointcl
   //ros::Time toOctoTime = ros::Time::now();
 
   tree_mtx.lock();
-  planningTree.insertPointCloud(pc, scan_orig);
+  planningTree->insertPointCloud(pc, scan_orig);
   tree_mtx.unlock();
 
   occupancyScanned.store(true);
@@ -605,7 +605,7 @@ void ViewpointPlanner::registerPointcloudWithRoi(const ros::MessageEvent<pointcl
   //ROS_INFO_STREAM("Cloud sizes: " << inlierCloud.size() << ",  " << outlierCloud.size());
 
   tree_mtx.lock();
-  planningTree.insertRegionScan(inlierCloud, outlierCloud);
+  planningTree->insertRegionScan(inlierCloud, outlierCloud);
   tree_mtx.unlock();
 
   roiScanned.store(true);
@@ -784,14 +784,14 @@ void ViewpointPlanner::sampleAroundROICenter(const octomap::point3d &center, con
   {
     octomap::KeyRay ray;
     octomap::point3d spherePoint = sampleRandomPointOnSphere(center, sampleRandomSensorDistance());
-    planningTree.computeRayKeys(center, spherePoint, ray);
+    planningTree->computeRayKeys(center, spherePoint, ray);
     bool view_occluded = false;
     bool has_left_roi = false;
     bool last_node_free = false;
     size_t unknown_nodes = 0;
     for (const octomap::OcTreeKey &key : ray)
     {
-      octomap_vpp::RoiOcTreeNode *node = planningTree.search(key);
+      octomap_vpp::RoiOcTreeNode *node = planningTree->search(key);
       if (node == NULL)
       {
         unknown_nodes++;
@@ -799,7 +799,7 @@ void ViewpointPlanner::sampleAroundROICenter(const octomap::point3d &center, con
         last_node_free = false;
         continue;
       }
-      if (!has_left_roi && planningTree.isNodeROI(node))
+      if (!has_left_roi && planningTree->isNodeROI(node))
       {
         continue;
       }
@@ -909,8 +909,8 @@ double ViewpointPlanner::computeExpectedRayIGinSamplingTree(const octomap::KeyRa
   //double curProb = 1;
   for (const octomap::OcTreeKey &key : ray)
   {
-    octomap_vpp::RoiOcTreeNode *node = planningTree.search(key);
-    float reachability = samplingTree ? samplingTree->getReachability(transformToWorkspace(planningTree.keyToCoord(key))) : 1.f;
+    octomap_vpp::RoiOcTreeNode *node = planningTree->search(key);
+    float reachability = samplingTree ? samplingTree->getReachability(transformToWorkspace(planningTree->keyToCoord(key))) : 1.f;
     if (reachability > 0) reachability = 1.f; // Test: binarize reachability
     if (node == NULL)
     {
@@ -928,7 +928,7 @@ double ViewpointPlanner::computeExpectedRayIGinSamplingTree(const octomap::KeyRa
     }
     /*float logOdds = testTree.keyToLogOdds(key);
     double gain = testTree.computeExpectedInformationGain(logOdds);
-    double reachability = samplingTree ? samplingTree->getReachability(transformToWorkspace(planningTree.keyToCoord(key))) : 1.0; // default to 1 if reachability not specified
+    double reachability = samplingTree ? samplingTree->getReachability(transformToWorkspace(planningTree->keyToCoord(key))) : 1.0; // default to 1 if reachability not specified
     //const double RB_WEIGHT = 0.5;
     double weightedGain = reachability * gain;//RB_WEIGHT * reachability + (1 - RB_WEIGHT) * gain;
     expected_gain += weightedGain; // * curProb
@@ -960,7 +960,7 @@ double ViewpointPlanner::computeViewpointSamplingValue(const octomap::pose6d &vi
       octomap::point3d end = dir * maxRange;
       end = viewpoint.transform(end);
       octomap::KeyRay ray;
-      planningTree.computeRayKeys(viewpoint.trans(), end, ray);
+      planningTree->computeRayKeys(viewpoint.trans(), end, ray);
       double gain = computeExpectedRayIGinSamplingTree(ray);
       //ROS_INFO_STREAM("Ray (" << i << ", " << j << ") from " << viewpoint.trans() << " to " << end << ": " << ray.size() << " Keys, Gain: " << gain);
       value += gain;
@@ -976,7 +976,7 @@ bool ViewpointPlanner::hasDirectUnknownNeighbour(const octomap::OcTreeKey &key, 
   {
     octomap::OcTreeKey neighbour_key(key);
     neighbour_key[i/2] += i%2 ? 1 : -1;
-    octomap_vpp::RoiOcTreeNode *node = planningTree.search(neighbour_key, depth);
+    octomap_vpp::RoiOcTreeNode *node = planningTree->search(neighbour_key, depth);
     if (node == NULL || node->getLogOdds() == 0) return true;
   }
   return false;
@@ -987,7 +987,7 @@ bool ViewpointPlanner::hasUnknownNeighbour18(const octomap::OcTreeKey &key, unsi
   for (int i = 0; i < 18; i++)
   {
     octomap::OcTreeKey neighbour_key(key[0] + octomap_vpp::nb18Lut[i][0], key[1] + octomap_vpp::nb18Lut[i][1], key[2] + octomap_vpp::nb18Lut[i][2]);
-    octomap_vpp::RoiOcTreeNode *node = planningTree.search(neighbour_key, depth);
+    octomap_vpp::RoiOcTreeNode *node = planningTree->search(neighbour_key, depth);
     if (node == NULL || node->getLogOdds() == 0) return true;
   }
   return false;
@@ -999,7 +999,7 @@ bool ViewpointPlanner::hasUnknownAndOccupiedNeighbour6(const octomap::OcTreeKey 
   for (int i = 0; i < 6 && !(unknown && occupied); i++)
   {
     octomap::OcTreeKey neighbour_key(key[0] + octomap_vpp::nb6Lut[i][0], key[1] + octomap_vpp::nb6Lut[i][1], key[2] + octomap_vpp::nb6Lut[i][2]);
-    octomap_vpp::RoiOcTreeNode *node = planningTree.search(neighbour_key, depth);
+    octomap_vpp::RoiOcTreeNode *node = planningTree->search(neighbour_key, depth);
     if (node == NULL || node->getLogOdds() == 0) unknown = true;
     else if (node->getLogOdds() > 0) occupied = true;
   }
@@ -1012,7 +1012,7 @@ bool ViewpointPlanner::hasUnknownAndOccupiedNeighbour18(const octomap::OcTreeKey
   for (int i = 0; i < 18 && !(unknown && occupied); i++)
   {
     octomap::OcTreeKey neighbour_key(key[0] + octomap_vpp::nb18Lut[i][0], key[1] + octomap_vpp::nb18Lut[i][1], key[2] + octomap_vpp::nb18Lut[i][2]);
-    octomap_vpp::RoiOcTreeNode *node = planningTree.search(neighbour_key, depth);
+    octomap_vpp::RoiOcTreeNode *node = planningTree->search(neighbour_key, depth);
     if (node == NULL || node->getLogOdds() == 0) unknown = true;
     else if (node->getLogOdds() > 0) occupied = true;
   }
@@ -1021,9 +1021,9 @@ bool ViewpointPlanner::hasUnknownAndOccupiedNeighbour18(const octomap::OcTreeKey
 
 void ViewpointPlanner::visualizeBorderPoints(const octomap::point3d &pmin, const octomap::point3d &pmax, unsigned int depth)
 {
-  assert(depth <= planningTree.getTreeDepth());
+  assert(depth <= planningTree->getTreeDepth());
   if (depth == 0)
-    depth = planningTree.getTreeDepth();
+    depth = planningTree->getTreeDepth();
 
   /*octomap::OcTreeKey key_min = testTree.coordToKey(pmin, depth);
   octomap::OcTreeKey key_max = testTree.coordToKey(pmax, depth);
@@ -1055,7 +1055,7 @@ void ViewpointPlanner::visualizeBorderPoints(const octomap::point3d &pmin, const
     }
   }*/
 
-  for (auto it = planningTree.begin_leafs_bbx(pmin, pmax, depth), end = planningTree.end_leafs_bbx(); it != end; it++)
+  for (auto it = planningTree->begin_leafs_bbx(pmin, pmax, depth), end = planningTree->end_leafs_bbx(); it != end; it++)
   {
     if (it->getLogOdds() < 0) // is node free; TODO: replace with bounds later
     {
@@ -1186,7 +1186,7 @@ octomap::point3d ViewpointPlanner::computeSurfaceNormalDir(const octomap::OcTree
   for (size_t i = 0; i < 18; i++)
   {
     octomap::OcTreeKey neighbour_key(key[0] + octomap_vpp::nb18Lut[i][0], key[1] + octomap_vpp::nb18Lut[i][1], key[2] + octomap_vpp::nb18Lut[i][2]);
-    octomap_vpp::RoiOcTreeNode *node = planningTree.search(neighbour_key);
+    octomap_vpp::RoiOcTreeNode *node = planningTree->search(neighbour_key);
     if (node != NULL && node->getLogOdds() > 0) // occupied
     {
       normalDir -= octomap::point3d(octomap_vpp::nb18Lut[i][0], octomap_vpp::nb18Lut[i][1], octomap_vpp::nb18Lut[i][2]);
@@ -1202,7 +1202,7 @@ octomap::point3d ViewpointPlanner::computeUnknownDir(const octomap::OcTreeKey &k
   for (size_t i = 0; i < 18; i++)
   {
     octomap::OcTreeKey neighbour_key(key[0] + octomap_vpp::nb18Lut[i][0], key[1] + octomap_vpp::nb18Lut[i][1], key[2] + octomap_vpp::nb18Lut[i][2]);
-    octomap_vpp::RoiOcTreeNode *node = planningTree.search(neighbour_key);
+    octomap_vpp::RoiOcTreeNode *node = planningTree->search(neighbour_key);
     if (node == NULL || node->getLogOdds() == 0)
     {
       averageUnknownDir += octomap::point3d(octomap_vpp::nb18Lut[i][0], octomap_vpp::nb18Lut[i][1], octomap_vpp::nb18Lut[i][2]);
@@ -1217,7 +1217,7 @@ void ViewpointPlanner::getFreeNeighbours6(const octomap::OcTreeKey &key, octomap
   for (int i = 0; i < 6; i++)
   {
     octomap::OcTreeKey neighbour_key(key[0] + octomap_vpp::nb6Lut[i][0], key[1] + octomap_vpp::nb6Lut[i][1], key[2] + octomap_vpp::nb6Lut[i][2]);
-    octomap_vpp::RoiOcTreeNode *node = planningTree.search(neighbour_key);
+    octomap_vpp::RoiOcTreeNode *node = planningTree->search(neighbour_key);
     if (node != NULL && node->getLogOdds() < 0) freeKeys.insert(neighbour_key);
   }
 }
@@ -1257,7 +1257,7 @@ std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleAroundMultiROIC
         vp.joint_target.reset(new robot_state::RobotState(manipulator_group.getJointValueTarget()));
       }
 
-      planningTree.computeRayKeys(center, spherePoint, ray);
+      planningTree->computeRayKeys(center, spherePoint, ray);
       bool view_occluded = false;
       bool first_roi_passed = false;
       bool has_left_roi = false;
@@ -1265,7 +1265,7 @@ std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleAroundMultiROIC
       size_t unknown_nodes = 0;
       for (const octomap::OcTreeKey &key : ray)
       {
-        octomap_vpp::RoiOcTreeNode *node = planningTree.search(key);
+        octomap_vpp::RoiOcTreeNode *node = planningTree->search(key);
         if (node == NULL)
         {
           unknown_nodes++;
@@ -1273,7 +1273,7 @@ std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleAroundMultiROIC
           last_node_free = false;
           continue;
         }
-        if (!has_left_roi && planningTree.isNodeROI(node))
+        if (!has_left_roi && planningTree->isNodeROI(node))
         {
           first_roi_passed = true;
           continue;
@@ -1323,7 +1323,7 @@ std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleContourPoints(c
     if (stMin_tf(i) > stMax_tf(i))
       std::swap(stMin_tf(i), stMax_tf(i));
   }
-  for (auto it = planningTree.begin_leafs_bbx(stMin_tf, stMax_tf), end = planningTree.end_leafs_bbx(); it != end; it++)
+  for (auto it = planningTree->begin_leafs_bbx(stMin_tf, stMax_tf), end = planningTree->end_leafs_bbx(); it != end; it++)
   {
     //total_nodes++;
     if (samplingTree != NULL && samplingTree->search(transformToWorkspace(it.getCoordinate())) == NULL) // sampling tree specified and sampled point not in sampling tree
@@ -1361,7 +1361,7 @@ std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleContourPoints(c
   {
     Viewpoint vp;
     octomath::Vector3 normalDir = computeSurfaceNormalDir(key);
-    octomap::point3d contourPoint = planningTree.keyToCoord(key);
+    octomap::point3d contourPoint = planningTree->keyToCoord(key);
     octomap::point3d vpOrig = contourPoint + normalDir * sampleRandomSensorDistance();
     tf2::Quaternion viewQuat = dirVecToQuat(-normalDir, camQuat, viewDir);
     vp.pose.position = octomap::pointOctomapToMsg(vpOrig);
@@ -1377,7 +1377,7 @@ std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleContourPoints(c
 
       vp.joint_target.reset(new robot_state::RobotState(manipulator_group.getJointValueTarget()));
     }
-    octomap_vpp::RoiOcTreeNode *node = planningTree.search(vpOrig);
+    octomap_vpp::RoiOcTreeNode *node = planningTree->search(vpOrig);
     if (node != NULL && node->getLogOdds() > 0) // Node is occupied
     {
       continue;
@@ -1385,7 +1385,7 @@ std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleContourPoints(c
 
     vp.target = contourPoint;
     octomap::pose6d viewpose(vpOrig, octomath::Quaternion(viewQuat.w(), viewQuat.x(), viewQuat.y(), viewQuat.z()));
-    vp.infoGain = computeViewpointSamplingValue(viewpose, 80.0 * M_PI / 180.0, 8, 6, sensor_max_range); // planningTree.computeViewpointValue(viewpose, 80.0 * M_PI / 180.0, 8, 6, sensor_max_range, false);
+    vp.infoGain = computeViewpointSamplingValue(viewpose, 80.0 * M_PI / 180.0, 8, 6, sensor_max_range); // planningTree->computeViewpointValue(viewpose, 80.0 * M_PI / 180.0, 8, 6, sensor_max_range, false);
     vp.distance = (vpOrig - camPos).norm();
     vp.utility = vp.infoGain - 0.2 * vp.distance;
     vp.isFree = true;
@@ -1415,7 +1415,7 @@ std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleContourPoints(c
   marker.color.b = 0.0;
   for (const octomap::OcTreeKey &key : contourKeys)
   {
-    marker.points.push_back(octomap::pointOctomapToMsg(planningTree.keyToCoord(key)));
+    marker.points.push_back(octomap::pointOctomapToMsg(planningTree->keyToCoord(key)));
   }
   pointVisPub.publish(marker);*/
 
@@ -1426,7 +1426,7 @@ std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleContourPoints(c
 
 std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleRoiContourPoints(const octomap::point3d &camPos, const tf2::Quaternion &camQuat)
 {
-  octomap::KeySet roi = planningTree.getRoiKeys();
+  octomap::KeySet roi = planningTree->getRoiKeys();
   octomap::KeySet freeNeighbours;
   for (const octomap::OcTreeKey &key : roi)
   {
@@ -1437,7 +1437,7 @@ std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleRoiContourPoint
   {
     if (hasDirectUnknownNeighbour(key))
     {
-      selectedPoints.push_back(planningTree.keyToCoord(key));
+      selectedPoints.push_back(planningTree->keyToCoord(key));
     }
   }
 
@@ -1477,13 +1477,13 @@ std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleRoiContourPoint
       vp.joint_target.reset(new robot_state::RobotState(manipulator_group.getJointValueTarget()));
     }
 
-    planningTree.computeRayKeys(target, spherePoint, ray);
+    planningTree->computeRayKeys(target, spherePoint, ray);
     bool view_occluded = false;
     bool last_node_free = false;
     size_t unknown_nodes = 0;
     for (const octomap::OcTreeKey &key : ray)
     {
-      octomap_vpp::RoiOcTreeNode *node = planningTree.search(key);
+      octomap_vpp::RoiOcTreeNode *node = planningTree->search(key);
       if (node == NULL)
       {
         unknown_nodes++;
@@ -1528,25 +1528,25 @@ std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleRoiAdjecentCoun
   tree_mtx.lock();
 
   ros::Time inflationBegin = ros::Time::now();
-  planningTree.computeInflatedRois(planningTree.getResolution(), 0.1);
+  planningTree->computeInflatedRois(planningTree->getResolution(), 0.1);
   ros::Time inflationEnd = ros::Time::now();
   ROS_INFO_STREAM("Inflation time: " << (inflationEnd - inflationBegin));
-  octomap::KeySet roi_keys = planningTree.getRoiKeys();
-  octomap::KeySet inflated_roi_keys = planningTree.getInflatedRoiKeys();
+  octomap::KeySet roi_keys = planningTree->getRoiKeys();
+  octomap::KeySet inflated_roi_keys = planningTree->getInflatedRoiKeys();
   std::vector<octomap::point3d> inflated_contours;
 
   for (const octomap::OcTreeKey &key : inflated_roi_keys)
   {
-    if (samplingTree != NULL && samplingTree->search(transformToWorkspace(planningTree.keyToCoord(key))) == NULL) // sampling tree specified and sampled point not in sampling tree
+    if (samplingTree != NULL && samplingTree->search(transformToWorkspace(planningTree->keyToCoord(key))) == NULL) // sampling tree specified and sampled point not in sampling tree
     {
       continue;
     }
-    octomap_vpp::RoiOcTreeNode *node = planningTree.search(key);
+    octomap_vpp::RoiOcTreeNode *node = planningTree->search(key);
     if (node != NULL && node->getLogOdds() < 0) // is node free; TODO: replace with bounds later
     {
       if (hasUnknownAndOccupiedNeighbour6(key))
       {
-        inflated_contours.push_back(planningTree.keyToCoord(key));
+        inflated_contours.push_back(planningTree->keyToCoord(key));
       }
     }
   }
@@ -1585,13 +1585,13 @@ std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleRoiAdjecentCoun
       vp.joint_target.reset(new robot_state::RobotState(manipulator_group.getJointValueTarget()));
     }
 
-    planningTree.computeRayKeys(target, spherePoint, ray);
+    planningTree->computeRayKeys(target, spherePoint, ray);
     bool view_occluded = false;
     bool last_node_free = false;
     size_t unknown_nodes = 0;
     for (const octomap::OcTreeKey &key : ray)
     {
-      octomap_vpp::RoiOcTreeNode *node = planningTree.search(key);
+      octomap_vpp::RoiOcTreeNode *node = planningTree->search(key);
       if (node == NULL)
       {
         unknown_nodes++;
@@ -1704,7 +1704,7 @@ std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleBorderPoints(co
 
   std::vector<octomap::OcTreeKey> viewpoint_candidates;
 
-  for (auto it = planningTree.begin_leafs_bbx(pmin, pmax), end = planningTree.end_leafs_bbx(); it != end; it++)
+  for (auto it = planningTree->begin_leafs_bbx(pmin, pmax), end = planningTree->end_leafs_bbx(); it != end; it++)
   {
     if (workspaceTree != NULL && workspaceTree->search(transformToWorkspace(it.getCoordinate())) == NULL) // workspace specified and sampled point not in workspace
     {
@@ -1736,7 +1736,7 @@ std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleBorderPoints(co
   {
     Viewpoint vp;
 
-    octomap::point3d point = planningTree.keyToCoord(key);
+    octomap::point3d point = planningTree->keyToCoord(key);
     octomath::Vector3 dirVec = computeUnknownDir(key);
     tf2::Quaternion viewQuat = dirVecToQuat(dirVec, camQuat, viewDir);
     vp.pose.position = octomap::pointOctomapToMsg(point);
@@ -1779,7 +1779,7 @@ robot_state::RobotStatePtr ViewpointPlanner::sampleNextRobotState(const robot_st
     auto quaternion = Eigen::Quaterniond(stateTf.linear()).coeffs();
     octomap::pose6d viewpoint(octomap::point3d(translation[0], translation[1], translation[2]), octomath::Quaternion(quaternion[0], quaternion[1], quaternion[2], quaternion[3]));
     tree_mtx.lock();
-    double curValue = planningTree.computeViewpointValue(viewpoint, 80.0 * M_PI / 180.0, 8, 6, 5.0);
+    double curValue = planningTree->computeViewpointValue(viewpoint, 80.0 * M_PI / 180.0, 8, 6, 5.0);
     tree_mtx.unlock();
     if (curValue > maxValue)
     {
@@ -1978,7 +1978,7 @@ bool ViewpointPlanner::saveTreeAsObj(const std::string &file_name)
   std::vector<octomap_vpp::Triangle> faces;
   tree_mtx.lock();
   auto isOcc = [](const octomap_vpp::RoiOcTree &tree, const octomap_vpp::RoiOcTreeNode *node) { return node->getLogOdds() > 0; };
-  octomap_vpp::polygonize<octomap_vpp::RoiOcTree>(planningTree, vertices, faces, isOcc);
+  octomap_vpp::polygonize<octomap_vpp::RoiOcTree>(*planningTree, vertices, faces, isOcc);
   tree_mtx.unlock();
   std::ofstream tree_out(file_name);
   octomap_vpp::generateObj(tree_out, vertices, faces);
@@ -1992,7 +1992,7 @@ bool ViewpointPlanner::saveROIsAsObj(const std::string &file_name)
   std::vector<octomap_vpp::Triangle> faces;
   tree_mtx.lock();
   auto isOcc = [](const octomap_vpp::RoiOcTree &tree, const octomap_vpp::RoiOcTreeNode *node) { return tree.isNodeROI(node); };
-  octomap_vpp::polygonizeSubset<octomap_vpp::RoiOcTree>(planningTree, planningTree.getRoiKeys(), vertices, faces, isOcc);
+  octomap_vpp::polygonizeSubset<octomap_vpp::RoiOcTree>(*planningTree, planningTree->getRoiKeys(), vertices, faces, isOcc);
   tree_mtx.unlock();
   std::ofstream tree_out(file_name);
   octomap_vpp::generateObj(tree_out, vertices, faces);
@@ -2000,7 +2000,7 @@ bool ViewpointPlanner::saveROIsAsObj(const std::string &file_name)
   return true;
 }
 
-bool ViewpointPlanner::saveOctomap()
+std::string ViewpointPlanner::saveOctomap()
 {
   std::stringstream fDateTime;
   const boost::posix_time::ptime curDateTime = boost::posix_time::second_clock::local_time();
@@ -2008,9 +2008,30 @@ bool ViewpointPlanner::saveOctomap()
   fDateTime.imbue(std::locale(fDateTime.getloc(), timeFacet));
   fDateTime << "planningTree_" << curDateTime << ".ot";
   tree_mtx.lock();
-  bool result = planningTree.write(fDateTime.str());
+  bool result = planningTree->write(fDateTime.str());
   tree_mtx.unlock();
-  return result;
+  return result ? fDateTime.str() : "";
+}
+
+int ViewpointPlanner::loadOctomap(const std::string &filename)
+{
+  octomap_vpp::RoiOcTree *map = NULL;
+  octomap::AbstractOcTree *tree =  octomap::AbstractOcTree::read(filename);
+  if (!tree)
+    return -1;
+
+  map = dynamic_cast<octomap_vpp::RoiOcTree*>(tree);
+  if(!map)
+  {
+    delete tree;
+    return -2;
+  }
+  tree_mtx.lock();
+  delete planningTree;
+  planningTree = map;
+  tree_mtx.unlock();
+  publishMap();
+  return 0;
 }
 
 void ViewpointPlanner::plannerLoop()
@@ -2120,18 +2141,18 @@ void ViewpointPlanner::plannerLoop()
         saveViewpointsToBag(explorationVps, "explorationPoints", ros::Time::now());
     }
 
-    std::pair<std::vector<octomap::point3d>, std::vector<octomap::point3d>> clusterCentersWithVol = planningTree.getClusterCentersWithVolume();
+    std::pair<std::vector<octomap::point3d>, std::vector<octomap::point3d>> clusterCentersWithVol = planningTree->getClusterCentersWithVolume();
     std::vector<octomap::point3d> &clusterCenters = clusterCentersWithVol.first;
     //std::vector<octomap::point3d> &clusterVolumes = clusterCentersWithVol.second;
     //publishCubeVisualization(cubeVisPub, clusterCenters, clusterVolumes);
-    /*ROS_INFO_STREAM("Found " << clusterCenters.size() << " clusters for " << planningTree.getRoiSize() << " ROI cells");
+    /*ROS_INFO_STREAM("Found " << clusterCenters.size() << " clusters for " << planningTree->getRoiSize() << " ROI cells");
     for(size_t i = 0; i < clusterCenters.size(); i++)
     {
       octomap::point3d &dims = clusterVolumes[i];
       dims *= 100; // Convert m to cm
       double vol = dims.x() * dims.y() * dims.z();
       const octomap::point3d BBX_DIFF(0.2, 0.2, 0.2);
-      double disRatio = planningTree.getDiscoveredRatio(clusterCenters[i] - BBX_DIFF, clusterCenters[i] + BBX_DIFF);
+      double disRatio = planningTree->getDiscoveredRatio(clusterCenters[i] - BBX_DIFF, clusterCenters[i] + BBX_DIFF);
       ROS_INFO_STREAM("Cluster at " << clusterCenters[i] << " with volume " << dims.x() << "*" << dims.y() << "*" << dims.z() << " (" << vol << ") cm3; "
                       << "DisRatio: " << disRatio);
     }*/

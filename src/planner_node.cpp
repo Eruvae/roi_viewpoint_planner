@@ -4,6 +4,7 @@
 #include "viewpoint_planner.h"
 #include "roi_viewpoint_planner_msgs/ChangePlannerMode.h"
 #include "roi_viewpoint_planner_msgs/SaveOctomap.h"
+#include "roi_viewpoint_planner_msgs/LoadOctomap.h"
 #include <std_srvs/SetBool.h>
 #include <std_srvs/Trigger.h>
 #include <boost/algorithm/string/predicate.hpp>
@@ -46,7 +47,17 @@ bool changePlannerMode(roi_viewpoint_planner_msgs::ChangePlannerMode::Request &r
 
 bool saveOctomap(roi_viewpoint_planner_msgs::SaveOctomap::Request &req, roi_viewpoint_planner_msgs::SaveOctomap::Response &res)
 {
-  res.success = planner->saveOctomap();
+  res.filename = planner->saveOctomap();
+  res.success = res.filename != "";
+  return true;
+}
+
+bool loadOctomap(roi_viewpoint_planner_msgs::LoadOctomap::Request &req, roi_viewpoint_planner_msgs::LoadOctomap::Response &res)
+{
+  int err_code = planner->loadOctomap(req.filename);
+  res.success = (err_code == 0);
+  if (err_code == -1) res.error_message = "Deserialization failed";
+  else if (err_code == -2) res.error_message = "Wrong Octree type";
   return true;
 }
 
@@ -170,6 +181,7 @@ int main(int argc, char **argv)
   ros::ServiceServer activatePlanExecutionService = nhp.advertiseService("activate_plan_execution", activatePlanExecution);
   ros::ServiceServer saveTreeAsObjService = nhp.advertiseService("save_tree_as_obj", saveTreeAsObj);
   ros::ServiceServer saveOctomapService = nhp.advertiseService("save_octomap", saveOctomap);
+  ros::ServiceServer loadOctomapService = nhp.advertiseService("load_octomap", loadOctomap);
 
   dynamic_reconfigure::Server<roi_viewpoint_planner::PlannerConfig> server(nhp);
 

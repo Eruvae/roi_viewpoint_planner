@@ -75,7 +75,7 @@ const std::string PC_GLOBAL = "/points_global";
 class ViewpointPlanner
 {
 private:
-  octomap_vpp::RoiOcTree planningTree;
+  octomap_vpp::RoiOcTree *planningTree;
   octomap_vpp::WorkspaceOcTree *workspaceTree;
   octomap_vpp::WorkspaceOcTree *samplingTree;
   octomap::point3d wsMin, wsMax;
@@ -318,7 +318,9 @@ public:
 
   bool saveROIsAsObj(const std::string &file_name);
 
-  bool saveOctomap();
+  std::string saveOctomap();
+
+  int loadOctomap(const std::string &filename);
 
   void plannerLoop();
 };
