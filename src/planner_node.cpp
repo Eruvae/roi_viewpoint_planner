@@ -2,10 +2,9 @@
 #include <ros/package.h>
 
 #include "viewpoint_planner.h"
-#include "roi_viewpoint_planner_msgs/ChangePlannerMode.h"
 #include "roi_viewpoint_planner_msgs/SaveOctomap.h"
+#include "roi_viewpoint_planner_msgs/MoveToState.h"
 #include "roi_viewpoint_planner_msgs/LoadOctomap.h"
-#include <std_srvs/SetBool.h>
 #include <std_srvs/Trigger.h>
 #include <boost/algorithm/string/predicate.hpp>
 
@@ -17,31 +16,10 @@
 
 ViewpointPlanner *planner;
 
-bool activatePlanExecution(std_srvs::SetBool::Request &req, std_srvs::SetBool::Response &res)
-{
-  planner->execute_plan = req.data;
-  res.success = true;
-  return true;
-}
-
 bool saveTreeAsObj(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res)
 {
   res.success = planner->saveTreeAsObj("planning_tree.obj");
   planner->saveROIsAsObj("roi_mesh.obj");
-  return true;
-}
-
-bool changePlannerMode(roi_viewpoint_planner_msgs::ChangePlannerMode::Request &req, roi_viewpoint_planner_msgs::ChangePlannerMode::Response &res)
-{
-  if (req.mode < ViewpointPlanner::NUM_MODES)
-  {
-    planner->mode = (ViewpointPlanner::PlannerMode)req.mode;
-    res.success = true;
-  }
-  else
-  {
-    res.success = false;
-  }
   return true;
 }
 
@@ -58,6 +36,12 @@ bool loadOctomap(roi_viewpoint_planner_msgs::LoadOctomap::Request &req, roi_view
   res.success = (err_code == 0);
   if (err_code == -1) res.error_message = "Deserialization failed";
   else if (err_code == -2) res.error_message = "Wrong Octree type";
+  return true;
+}
+
+bool moveToState(roi_viewpoint_planner_msgs::MoveToState::Request &req, roi_viewpoint_planner_msgs::MoveToState::Response &res)
+{
+  res.success = planner->moveToState(req.joint_values, true);
   return true;
 }
 
@@ -177,11 +161,10 @@ int main(int argc, char **argv)
   std::string ws_frame = nhp.param<std::string>("ws_frame", "arm_base_link");
 
   planner = new ViewpointPlanner(nh, nhp, wstree_file, sampling_tree_file, tree_resolution, map_frame, ws_frame);
-  ros::ServiceServer changePlannerModeService = nhp.advertiseService("change_planner_mode", changePlannerMode);
-  ros::ServiceServer activatePlanExecutionService = nhp.advertiseService("activate_plan_execution", activatePlanExecution);
   ros::ServiceServer saveTreeAsObjService = nhp.advertiseService("save_tree_as_obj", saveTreeAsObj);
   ros::ServiceServer saveOctomapService = nhp.advertiseService("save_octomap", saveOctomap);
   ros::ServiceServer loadOctomapService = nhp.advertiseService("load_octomap", loadOctomap);
+  ros::ServiceServer moveToStateService = nhp.advertiseService("move_to_state", moveToState);
 
   dynamic_reconfigure::Server<roi_viewpoint_planner::PlannerConfig> server(nhp);
 
