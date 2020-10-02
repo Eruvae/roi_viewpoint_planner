@@ -148,14 +148,14 @@ public:
     IDLE = 0,
     MAP_ONLY = 1,
     SAMPLE_AUTOMATIC = 2,
-    SAMPLE_ROI_CENTERS = 3,
-    SAMPLE_ROI_CONTOURS = 4,
-    SAMPLE_CONTOURS = 5,
-    SAMPLE_BORDER = 6,
-    SAMPLE_ROI_ADJACENT = 7,
-    SAMPLE_EXPLORATION = 8,
+    SAMPLE_ROI_CONTOURS = 3,
+    SAMPLE_ROI_ADJACENT = 4,
+    SAMPLE_ROI_CENTERS = 5,
+    SAMPLE_EXPLORATION = 6,
+    SAMPLE_CONTOURS = 7,
+    SAMPLE_BORDER = 8,
     NUM_MODES = 9 // Should be kept as last element if new modes are added
-  } mode;
+  } mode, roi_sample_mode, expl_sample_mode;
 
   bool execute_plan;
   bool require_execution_confirmation;
@@ -321,6 +321,8 @@ public:
   std::string saveOctomap();
 
   int loadOctomap(const std::string &filename);
+
+  void resetOctomap();
 
   void plannerLoop();
 };

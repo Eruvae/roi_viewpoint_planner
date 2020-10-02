@@ -6,6 +6,7 @@
 #include "roi_viewpoint_planner_msgs/MoveToState.h"
 #include "roi_viewpoint_planner_msgs/LoadOctomap.h"
 #include <std_srvs/Trigger.h>
+#include <std_srvs/Empty.h>
 #include <boost/algorithm/string/predicate.hpp>
 
 #include <dynamic_reconfigure/server.h>
@@ -14,7 +15,11 @@
 #include "octomap_vpp/marching_cubes.h"
 #include "trolley_remote/trolley_remote.h"
 
+ros::NodeHandle *nhp_pt;
 ViewpointPlanner *planner;
+dynamic_reconfigure::Server<roi_viewpoint_planner::PlannerConfig> *config_server;
+boost::recursive_mutex config_mutex;
+roi_viewpoint_planner::PlannerConfig current_config;
 
 bool saveTreeAsObj(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res)
 {
@@ -37,6 +42,33 @@ bool loadOctomap(roi_viewpoint_planner_msgs::LoadOctomap::Request &req, roi_view
   if (err_code == -1) res.error_message = "Deserialization failed";
   else if (err_code == -2) res.error_message = "Wrong Octree type";
   return true;
+}
+
+bool resetOctomap(std_srvs::Empty::Request &req, std_srvs::Empty::Response &res)
+{
+  planner->resetOctomap();
+  return true;
+}
+
+bool resetPlanner(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res)
+{
+  config_mutex.lock();
+  current_config.mode = roi_viewpoint_planner::Planner_IDLE;
+  planner->mode = (ViewpointPlanner::PlannerMode) current_config.mode;
+  config_server->updateConfig(current_config);
+  config_mutex.unlock();
+
+  planner->resetOctomap();
+
+  std::vector<double> joint_start_values;
+  if(nhp_pt->getParam("initial_joint_values", joint_start_values))
+  {
+    planner->moveToState(joint_start_values);
+  }
+  else
+  {
+    ROS_WARN("No inital joint values set");
+  }
 }
 
 bool moveToState(roi_viewpoint_planner_msgs::MoveToState::Request &req, roi_viewpoint_planner_msgs::MoveToState::Response &res)
@@ -134,6 +166,15 @@ void reconfigureCallback(roi_viewpoint_planner::PlannerConfig &config, uint32_t 
   {
     planner->record_viewpoints = config.record_viewpoints;
   }
+  if (level & (1 << 19)) // auto_roi_sampling
+  {
+    planner->roi_sample_mode = (ViewpointPlanner::PlannerMode) config.auto_roi_sampling;
+  }
+  if (level & (1 << 20)) // auto_expl_sampling
+  {
+    planner->expl_sample_mode = (ViewpointPlanner::PlannerMode) config.auto_expl_sampling;
+  }
+  current_config = config;
 }
 
 int main(int argc, char **argv)
@@ -141,6 +182,7 @@ int main(int argc, char **argv)
   ros::init(argc, argv, "roi_viewpoint_planner");
   ros::NodeHandle nh;
   ros::NodeHandle nhp("~");
+  nhp_pt = &nhp;
   ros::AsyncSpinner spinner(4);
   spinner.start();
 
@@ -165,10 +207,11 @@ int main(int argc, char **argv)
   ros::ServiceServer saveOctomapService = nhp.advertiseService("save_octomap", saveOctomap);
   ros::ServiceServer loadOctomapService = nhp.advertiseService("load_octomap", loadOctomap);
   ros::ServiceServer moveToStateService = nhp.advertiseService("move_to_state", moveToState);
+  ros::ServiceServer resetOctomapService = nhp.advertiseService("reset_octomap", resetOctomap);
+  ros::ServiceServer resetPlannerService = nhp.advertiseService("reset_planner", resetPlanner);
 
-  dynamic_reconfigure::Server<roi_viewpoint_planner::PlannerConfig> server(nhp);
-
-  server.setCallback(reconfigureCallback);
+  config_server = new dynamic_reconfigure::Server<roi_viewpoint_planner::PlannerConfig>(config_mutex, nhp);
+  config_server->setCallback(reconfigureCallback);
 
   std::vector<double> joint_start_values;
   if(nhp.getParam("initial_joint_values", joint_start_values))
