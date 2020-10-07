@@ -318,7 +318,7 @@ public:
 
   bool saveROIsAsObj(const std::string &file_name);
 
-  std::string saveOctomap();
+  std::string saveOctomap(const std::string &name = "planningTree", bool name_is_prefix = true);
 
   int loadOctomap(const std::string &filename);
 

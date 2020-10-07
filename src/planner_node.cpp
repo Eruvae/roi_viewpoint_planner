@@ -30,7 +30,11 @@ bool saveTreeAsObj(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response 
 
 bool saveOctomap(roi_viewpoint_planner_msgs::SaveOctomap::Request &req, roi_viewpoint_planner_msgs::SaveOctomap::Response &res)
 {
-  res.filename = planner->saveOctomap();
+  if (req.specify_filename)
+    res.filename = planner->saveOctomap(req.name, req.name_is_prefix);
+  else
+    res.filename = planner->saveOctomap();
+
   res.success = res.filename != "";
   return true;
 }
@@ -63,12 +67,13 @@ bool resetPlanner(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &
   std::vector<double> joint_start_values;
   if(nhp_pt->getParam("initial_joint_values", joint_start_values))
   {
-    planner->moveToState(joint_start_values);
+    res.success = planner->moveToState(joint_start_values);
   }
   else
   {
     ROS_WARN("No inital joint values set");
   }
+  return true;
 }
 
 bool moveToState(roi_viewpoint_planner_msgs::MoveToState::Request &req, roi_viewpoint_planner_msgs::MoveToState::Response &res)

@@ -2000,17 +2000,22 @@ bool ViewpointPlanner::saveROIsAsObj(const std::string &file_name)
   return true;
 }
 
-std::string ViewpointPlanner::saveOctomap()
+std::string ViewpointPlanner::saveOctomap(const std::string &name, bool name_is_prefix)
 {
-  std::stringstream fDateTime;
-  const boost::posix_time::ptime curDateTime = boost::posix_time::second_clock::local_time();
-  boost::posix_time::time_facet *const timeFacet = new boost::posix_time::time_facet("%Y-%m-%d-%H-%M-%S");
-  fDateTime.imbue(std::locale(fDateTime.getloc(), timeFacet));
-  fDateTime << "planningTree_" << curDateTime << ".ot";
+  std::stringstream fName;
+  fName << name;
+  if (name_is_prefix)
+  {
+    const boost::posix_time::ptime curDateTime = boost::posix_time::second_clock::local_time();
+    boost::posix_time::time_facet *const timeFacet = new boost::posix_time::time_facet("%Y-%m-%d-%H-%M-%S");
+    fName.imbue(std::locale(fName.getloc(), timeFacet));
+    fName << "_" << curDateTime;
+  }
+  fName << ".ot";
   tree_mtx.lock();
-  bool result = planningTree->write(fDateTime.str());
+  bool result = planningTree->write(fName.str());
   tree_mtx.unlock();
-  return result ? fDateTime.str() : "";
+  return result ? fName.str() : "";
 }
 
 int ViewpointPlanner::loadOctomap(const std::string &filename)

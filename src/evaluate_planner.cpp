@@ -20,6 +20,8 @@
 #include <pcl/surface/convex_hull.h>
 #include <pcl/visualization/pcl_visualizer.h>
 #include <dynamic_reconfigure/server.h>
+#include <std_srvs/Trigger.h>
+#include <roi_viewpoint_planner_msgs/SaveOctomap.h>
 #include "roi_viewpoint_planner_msgs/EvaluatorConfig.h"
 #include "compute_cubes.h"
 #include "point_cloud_color_handler_clusters.h"
@@ -266,7 +268,7 @@ int main(int argc, char **argv)
     return -1;
   }
 
-  const std::vector<std::string> mode_list = {"idle", "automatic", "roi_centers", "roi_contours", "contours", "border", "roi_adjacent"};
+  const std::vector<std::string> mode_list = {"idle", "map_only", "automatic", "roi_contours", "roi_centers", "roi_adjacent", "exploration", "contours", "border"};
   const std::string planning_mode_str = nhp.param<std::string>("planning_mode", "automatic");
   auto mode_it = std::find(mode_list.begin(), mode_list.end(), planning_mode_str);
   if (mode_it == mode_list.end())
@@ -371,253 +373,293 @@ int main(int argc, char **argv)
 
   ros::Subscriber octomap_sub = nh.subscribe("/octomap", 10, octomapCallback);
 
-  // Activate planner
-
   dynamic_reconfigure::Client<roi_viewpoint_planner::PlannerConfig> configClient("/roi_viewpoint_planner");
 
-  std::ofstream resultsFile("planner_results.csv");
-  resultsFile << "Time (s), Detected ROIs, ROI percentage, Average distance, Average volume accuracy, Covered ROI volume, False ROI volume, ROI key count, True ROI keys, False ROI keys" << std::endl;
+  ros::ServiceClient saveOctomapClient = nh.serviceClient<roi_viewpoint_planner_msgs::SaveOctomap>("/roi_viewpoint_planner/save_octomap");
+  ros::ServiceClient resetPlannerClient = nh.serviceClient<std_srvs::Trigger>("/roi_viewpoint_planner/reset_planner");
 
-  roi_viewpoint_planner::PlannerConfig planner_config;
-  if (!configClient.getCurrentConfiguration(planner_config, ros::Duration(1)))
+  for (int i = 0; ros::ok() && i < 10; i++)
   {
-    ROS_ERROR("Could not contact configuration server");
-    return -1;
-  }
-  planner_config.activate_execution = true;
-  planner_config.require_execution_confirmation = false;
-  planner_config.mode = planning_mode;
-  if (!configClient.setConfiguration(planner_config))
-  {
-    ROS_ERROR("Applying configuration not successful");
-    return -1;
-  }
-  const double PLANNING_TIME = 180;
-  ros::Time plannerStartTime = ros::Time::now();
-  ROS_INFO("Planner activated");
+    // Activate planner
 
-  for (ros::Rate rate(1); ros::ok(); rate.sleep())
-  {
-    std::vector<octomap::point3d> detected_locs, detected_sizes;
+    const std::string resultsFileName = "planner_results_" + std::to_string(i) + ".csv";
+    std::ofstream resultsFile(resultsFileName);
+    resultsFile << "Time (s), Detected ROIs, ROI percentage, Average distance, Average volume accuracy, Covered ROI volume, False ROI volume, ROI key count, True ROI keys, False ROI keys" << std::endl;
 
-    tree_mtx.lock();
-    roiTree->computeRoiKeys();
-    octomap::KeySet roi_keys = roiTree->getRoiKeys();
-    std::tie(detected_locs, detected_sizes) = roiTree->getClusterCentersWithVolume();
-
-    // Mesh computations
-    /*std::vector<octomap::point3d> vertices;
-    std::vector<octomap_vpp::Triangle> faces;
-    auto isRoi = [](const octomap_vpp::RoiOcTree &tree, const octomap_vpp::RoiOcTreeNode *node) { return tree.isNodeROI(node); };
-    auto isOcc = [](const octomap_vpp::RoiOcTree &tree, const octomap_vpp::RoiOcTreeNode *node) { return node->getLogOdds() > 0; };
-    octomap_vpp::polygonizeSubset<octomap_vpp::RoiOcTree>(*roiTree, roi_keys, vertices, faces, isRoi);
-
-    // PCL Tests
-    auto faceClusters = octomap_vpp::computeFaceClusters(faces);
-    auto vertexClusters = octomap_vpp::computeClusterVertices(vertices, faceClusters);
-
-    for (const octomap::point3d_collection &coll : vertexClusters)
+    roi_viewpoint_planner::PlannerConfig planner_config;
+    if (!configClient.getCurrentConfiguration(planner_config, ros::Duration(1)))
     {
-      pcl::PointCloud<pcl::PointXYZ>::Ptr cluster_cloud = octomap_vpp::octomapPointCollectionToPcl<pcl::PointXYZ>(coll);
-      ROS_INFO_STREAM("Cluster cloud size: " << cluster_cloud->size());
+      ROS_ERROR("Could not contact configuration server");
+      return -1;
     }
-
-    pcl::PointCloud<pcl::PointXYZ>::Ptr pcl_cloud = octomap_vpp::octomapToPcl<octomap_vpp::RoiOcTree, pcl::PointXYZ>(*roiTree, isOcc);
-    ROS_INFO_STREAM(pcl_cloud->size());*/
-
-    auto isRoi = [](const octomap_vpp::RoiOcTree &tree, const octomap_vpp::RoiOcTreeNode *node) { return tree.isNodeROI(node); };
-    pcl::PointCloud<pcl::PointXYZ>::Ptr roi_pcl = octomap_vpp::octomapToPcl<octomap_vpp::RoiOcTree, pcl::PointXYZ>(*roiTree, isRoi);
-
-    tree_mtx.unlock();
-
-    // PCL computations
-    std::vector<pcl::PointIndices> clusters;
-    std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr> hulls_clouds;
-    std::vector<std::vector<pcl::Vertices>> hulls_polygons;
-    std::vector<double> cluster_volumes;
-
-    clusterWithPCL(roi_pcl, clusters);
-    computeHullsAndVolumes(roi_pcl, clusters, hulls_clouds, hulls_polygons, cluster_volumes);
-
-    ROS_INFO_STREAM("Number of clusters: " << clusters.size());
-
-    // Debug view pointcloud
-    if (viewer_initialized.load())
+    planner_config.activate_execution = true;
+    planner_config.require_execution_confirmation = false;
+    planner_config.auto_expl_sampling = roi_viewpoint_planner::Planner_SAMPLE_CONTOURS;
+    planner_config.mode = planning_mode;
+    if (!configClient.setConfiguration(planner_config))
     {
-      pcl::visualization::PointCloudColorHandlerClusters<pcl::PointXYZ> roi_color_handler(roi_pcl, clusters);
-      viewer_mtx.lock();
-      viewer->removeAllPointClouds(vp2);
-      viewer->removeAllShapes(vp2);
-      viewer->addPointCloud<pcl::PointXYZ> (roi_pcl, roi_color_handler, "roi_cloud", vp2);
-      //viewer->addPointCloudNormals<pcl::PointXYZ, pcl::Normal> (roi_pcl, normal_cloud, 1, 0.02f, "roi_normals");
-      for (size_t i = 0; i < clusters.size(); i++)
+      ROS_ERROR("Applying configuration not successful");
+      return -1;
+    }
+    const double PLANNING_TIME = 180;
+    ros::Time plannerStartTime = ros::Time::now();
+    ROS_INFO("Planner activated");
+
+    for (ros::Rate rate(1); ros::ok(); rate.sleep())
+    {
+      std::vector<octomap::point3d> detected_locs, detected_sizes;
+
+      tree_mtx.lock();
+      roiTree->computeRoiKeys();
+      octomap::KeySet roi_keys = roiTree->getRoiKeys();
+      std::tie(detected_locs, detected_sizes) = roiTree->getClusterCentersWithVolume();
+
+      // Mesh computations
+      /*std::vector<octomap::point3d> vertices;
+      std::vector<octomap_vpp::Triangle> faces;
+      auto isRoi = [](const octomap_vpp::RoiOcTree &tree, const octomap_vpp::RoiOcTreeNode *node) { return tree.isNodeROI(node); };
+      auto isOcc = [](const octomap_vpp::RoiOcTree &tree, const octomap_vpp::RoiOcTreeNode *node) { return node->getLogOdds() > 0; };
+      octomap_vpp::polygonizeSubset<octomap_vpp::RoiOcTree>(*roiTree, roi_keys, vertices, faces, isRoi);
+
+      // PCL Tests
+      auto faceClusters = octomap_vpp::computeFaceClusters(faces);
+      auto vertexClusters = octomap_vpp::computeClusterVertices(vertices, faceClusters);
+
+      for (const octomap::point3d_collection &coll : vertexClusters)
       {
-        std::string name = "cluster_" + i;
-        viewer->addPolygonMesh<pcl::PointXYZ>(hulls_clouds[i], hulls_polygons[i], name, vp2);
+        pcl::PointCloud<pcl::PointXYZ>::Ptr cluster_cloud = octomap_vpp::octomapPointCollectionToPcl<pcl::PointXYZ>(coll);
+        ROS_INFO_STREAM("Cluster cloud size: " << cluster_cloud->size());
       }
-      viewer_mtx.unlock();
-    }
 
-    ros::Time currentTime = ros::Time::now();
+      pcl::PointCloud<pcl::PointXYZ>::Ptr pcl_cloud = octomap_vpp::octomapToPcl<octomap_vpp::RoiOcTree, pcl::PointXYZ>(*roiTree, isOcc);
+      ROS_INFO_STREAM(pcl_cloud->size());*/
 
-    ROS_INFO_STREAM("GT-Rois: " << roi_locations.size() << ", detected Rois: " << detected_locs.size());
+      auto isRoi = [](const octomap_vpp::RoiOcTree &tree, const octomap_vpp::RoiOcTreeNode *node) { return tree.isNodeROI(node); };
+      pcl::PointCloud<pcl::PointXYZ>::Ptr roi_pcl = octomap_vpp::octomapToPcl<octomap_vpp::RoiOcTree, pcl::PointXYZ>(*roiTree, isRoi);
 
-    // Compute Pairs
+      tree_mtx.unlock();
 
-    ublas::matrix<double> distances(roi_locations.size(), detected_locs.size());
-    std::vector<IndexPair> indices;
-    indices.reserve(roi_locations.size() * detected_locs.size());
-    for (size_t i = 0; i < roi_locations.size(); i++)
-    {
-      for (size_t j = 0; j < detected_locs.size(); j++)
+      // PCL computations
+      std::vector<pcl::PointIndices> clusters;
+      std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr> hulls_clouds;
+      std::vector<std::vector<pcl::Vertices>> hulls_polygons;
+      std::vector<double> cluster_volumes;
+
+      clusterWithPCL(roi_pcl, clusters);
+      computeHullsAndVolumes(roi_pcl, clusters, hulls_clouds, hulls_polygons, cluster_volumes);
+
+      ROS_INFO_STREAM("Number of clusters: " << clusters.size());
+
+      // Debug view pointcloud
+      if (viewer_initialized.load())
       {
-        distances(i, j) = (roi_locations[i] - detected_locs[j]).norm();
-        indices.push_back(IndexPair(i, j));
+        pcl::visualization::PointCloudColorHandlerClusters<pcl::PointXYZ> roi_color_handler(roi_pcl, clusters);
+        viewer_mtx.lock();
+        viewer->removeAllPointClouds(vp2);
+        viewer->removeAllShapes(vp2);
+        viewer->addPointCloud<pcl::PointXYZ> (roi_pcl, roi_color_handler, "roi_cloud", vp2);
+        //viewer->addPointCloudNormals<pcl::PointXYZ, pcl::Normal> (roi_pcl, normal_cloud, 1, 0.02f, "roi_normals");
+        for (size_t i = 0; i < clusters.size(); i++)
+        {
+          std::string name = "cluster_" + i;
+          viewer->addPolygonMesh<pcl::PointXYZ>(hulls_clouds[i], hulls_polygons[i], name, vp2);
+        }
+        viewer_mtx.unlock();
       }
-    }
 
-    auto indicesComp = [&distances](const IndexPair &a, const IndexPair &b)
-    {
-      return distances(a.gt_ind, a.det_ind) > distances(b.gt_ind, b.det_ind);
-    };
+      ros::Time currentTime = ros::Time::now();
 
-    boost::dynamic_bitset<> usedGtPoints(roi_locations.size());
-    boost::dynamic_bitset<> usedDetPoints(detected_locs.size());
-    std::vector<IndexPair> roiPairs;
-    roiPairs.reserve(std::min(roi_locations.size(), detected_locs.size()));
+      ROS_INFO_STREAM("GT-Rois: " << roi_locations.size() << ", detected Rois: " << detected_locs.size());
 
-    double MAX_DISTANCE = 0.2; // Maximal distance to be considered as same ROI
+      // Compute Pairs
 
-    for (std::make_heap(indices.begin(), indices.end(), indicesComp); !usedGtPoints.all() && !usedDetPoints.all(); std::pop_heap(indices.begin(), indices.end(), indicesComp), indices.pop_back())
-    {
-      const IndexPair &pair = indices.front();
-
-      if (distances(pair.gt_ind, pair.det_ind) > MAX_DISTANCE)
-        break;
-
-      if (usedGtPoints.test(pair.gt_ind) || usedDetPoints.test(pair.det_ind))
-        continue;
-
-      roiPairs.push_back(pair);
-      usedGtPoints.set(pair.gt_ind);
-      usedDetPoints.set(pair.det_ind);
-    }
-    /*while(!usedGtPoints.all() && !usedDetPoints.all())
-    {
-      double min_l = DBL_MAX;
-      size_t ind_gt = -1, ind_det = -1;
+      ublas::matrix<double> distances(roi_locations.size(), detected_locs.size());
+      std::vector<IndexPair> indices;
+      indices.reserve(roi_locations.size() * detected_locs.size());
       for (size_t i = 0; i < roi_locations.size(); i++)
       {
-        if (usedGtPoints.test(i)) continue;
         for (size_t j = 0; j < detected_locs.size(); j++)
         {
-          if (usedDetPoints.test(j)) continue;
-          if (distances(i, j) < min_l)
-          {
-            min_l = distances(i, j);
-            ind_gt = i;
-            ind_det = j;
-          }
+          distances(i, j) = (roi_locations[i] - detected_locs[j]).norm();
+          indices.push_back(IndexPair(i, j));
         }
       }
-      roiPairs.push_back(IndexPair(ind_gt, ind_det));
-      usedGtPoints.set(ind_gt);
-      usedDetPoints.set(ind_det);
-    }*/
-    double average_dist = 0;
-    double average_vol_accuracy = 0;
-    ROS_INFO_STREAM("Closest point pairs:");
-    for (const IndexPair &pair : roiPairs)
-    {
-      ROS_INFO_STREAM(roi_locations[pair.gt_ind] << " and " << detected_locs[pair.det_ind] << "; distance: " << distances(pair.gt_ind, pair.det_ind));
-      double gs = roi_sizes[pair.gt_ind].x() * roi_sizes[pair.gt_ind].y() * roi_sizes[pair.gt_ind].z();
-      double ds = detected_sizes[pair.det_ind].x() * detected_sizes[pair.det_ind].y() * detected_sizes[pair.det_ind].z();
 
-      double accuracy = 1 - std::abs(ds - gs) / gs;
-
-      ROS_INFO_STREAM("Sizes: " << roi_sizes[pair.gt_ind] << " and " << detected_sizes[pair.det_ind] << "; factor: " << (ds / gs));
-
-      average_dist += distances(pair.gt_ind, pair.det_ind);
-      average_vol_accuracy += accuracy;
-    }
-
-    if (roiPairs.size() > 0)
-    {
-      average_dist /= roiPairs.size();
-      average_vol_accuracy /= roiPairs.size();
-    }
-
-    // Compute volume overlap
-
-    octomap::KeySet detectedRoiBBkeys;
-    octomap::KeySet correctRoiBBkeys;
-    octomap::KeySet falseRoiBBkeys;
-    for (size_t i = 0; i < detected_locs.size(); i++)
-    {
-      octomap::OcTreeKey minKey = roiTree->coordToKey(detected_locs[i] - detected_sizes[i] * 0.5);
-      octomap::OcTreeKey maxKey = roiTree->coordToKey(detected_locs[i] + detected_sizes[i] * 0.5);
-      octomap::OcTreeKey curKey = minKey;
-      for (curKey[0] = minKey[0]; curKey[0] <= maxKey[0]; curKey[0]++)
+      auto indicesComp = [&distances](const IndexPair &a, const IndexPair &b)
       {
-        for (curKey[1] = minKey[1]; curKey[1] <= maxKey[1]; curKey[1]++)
+        return distances(a.gt_ind, a.det_ind) > distances(b.gt_ind, b.det_ind);
+      };
+
+      boost::dynamic_bitset<> usedGtPoints(roi_locations.size());
+      boost::dynamic_bitset<> usedDetPoints(detected_locs.size());
+      std::vector<IndexPair> roiPairs;
+      roiPairs.reserve(std::min(roi_locations.size(), detected_locs.size()));
+
+      double MAX_DISTANCE = 0.2; // Maximal distance to be considered as same ROI
+
+      for (std::make_heap(indices.begin(), indices.end(), indicesComp); !usedGtPoints.all() && !usedDetPoints.all(); std::pop_heap(indices.begin(), indices.end(), indicesComp), indices.pop_back())
+      {
+        const IndexPair &pair = indices.front();
+
+        if (distances(pair.gt_ind, pair.det_ind) > MAX_DISTANCE)
+          break;
+
+        if (usedGtPoints.test(pair.gt_ind) || usedDetPoints.test(pair.det_ind))
+          continue;
+
+        roiPairs.push_back(pair);
+        usedGtPoints.set(pair.gt_ind);
+        usedDetPoints.set(pair.det_ind);
+      }
+      /*while(!usedGtPoints.all() && !usedDetPoints.all())
+      {
+        double min_l = DBL_MAX;
+        size_t ind_gt = -1, ind_det = -1;
+        for (size_t i = 0; i < roi_locations.size(); i++)
         {
-          for (curKey[2] = minKey[2]; curKey[2] <= maxKey[2]; curKey[2]++)
+          if (usedGtPoints.test(i)) continue;
+          for (size_t j = 0; j < detected_locs.size(); j++)
           {
-            detectedRoiBBkeys.insert(curKey);
-            if (gtRoiKeys.find(curKey) != gtRoiKeys.end())
+            if (usedDetPoints.test(j)) continue;
+            if (distances(i, j) < min_l)
             {
-              correctRoiBBkeys.insert(curKey);
+              min_l = distances(i, j);
+              ind_gt = i;
+              ind_det = j;
             }
-            else
+          }
+        }
+        roiPairs.push_back(IndexPair(ind_gt, ind_det));
+        usedGtPoints.set(ind_gt);
+        usedDetPoints.set(ind_det);
+      }*/
+      double average_dist = 0;
+      double average_vol_accuracy = 0;
+      ROS_INFO_STREAM("Closest point pairs:");
+      for (const IndexPair &pair : roiPairs)
+      {
+        ROS_INFO_STREAM(roi_locations[pair.gt_ind] << " and " << detected_locs[pair.det_ind] << "; distance: " << distances(pair.gt_ind, pair.det_ind));
+        double gs = roi_sizes[pair.gt_ind].x() * roi_sizes[pair.gt_ind].y() * roi_sizes[pair.gt_ind].z();
+        double ds = detected_sizes[pair.det_ind].x() * detected_sizes[pair.det_ind].y() * detected_sizes[pair.det_ind].z();
+
+        double accuracy = 1 - std::abs(ds - gs) / gs;
+
+        ROS_INFO_STREAM("Sizes: " << roi_sizes[pair.gt_ind] << " and " << detected_sizes[pair.det_ind] << "; factor: " << (ds / gs));
+
+        average_dist += distances(pair.gt_ind, pair.det_ind);
+        average_vol_accuracy += accuracy;
+      }
+
+      if (roiPairs.size() > 0)
+      {
+        average_dist /= roiPairs.size();
+        average_vol_accuracy /= roiPairs.size();
+      }
+
+      // Compute volume overlap
+
+      octomap::KeySet detectedRoiBBkeys;
+      octomap::KeySet correctRoiBBkeys;
+      octomap::KeySet falseRoiBBkeys;
+      tree_mtx.lock();
+      for (size_t i = 0; i < detected_locs.size(); i++)
+      {
+        octomap::OcTreeKey minKey = roiTree->coordToKey(detected_locs[i] - detected_sizes[i] * 0.5);
+        octomap::OcTreeKey maxKey = roiTree->coordToKey(detected_locs[i] + detected_sizes[i] * 0.5);
+        octomap::OcTreeKey curKey = minKey;
+        for (curKey[0] = minKey[0]; curKey[0] <= maxKey[0]; curKey[0]++)
+        {
+          for (curKey[1] = minKey[1]; curKey[1] <= maxKey[1]; curKey[1]++)
+          {
+            for (curKey[2] = minKey[2]; curKey[2] <= maxKey[2]; curKey[2]++)
             {
-              falseRoiBBkeys.insert(curKey);
+              detectedRoiBBkeys.insert(curKey);
+              if (gtRoiKeys.find(curKey) != gtRoiKeys.end())
+              {
+                correctRoiBBkeys.insert(curKey);
+              }
+              else
+              {
+                falseRoiBBkeys.insert(curKey);
+              }
             }
           }
         }
       }
-    }
-    ROS_INFO_STREAM("Detected key count: " << detectedRoiBBkeys.size() << ", correct: " << correctRoiBBkeys.size() << ", false: " << falseRoiBBkeys.size());
+      tree_mtx.unlock();
+      ROS_INFO_STREAM("Detected key count: " << detectedRoiBBkeys.size() << ", correct: " << correctRoiBBkeys.size() << ", false: " << falseRoiBBkeys.size());
 
-    double coveredRoiVolumeRatio = (double)correctRoiBBkeys.size() / (double)gtRoiKeys.size();
-    double falseRoiVolumeRatio = detectedRoiBBkeys.size() ? (double)falseRoiBBkeys.size() / (double)detectedRoiBBkeys.size() : 0;
-    ROS_INFO_STREAM("Det vol ratio: " << coveredRoiVolumeRatio << ", False vol ratio: " << falseRoiVolumeRatio);
+      double coveredRoiVolumeRatio = (double)correctRoiBBkeys.size() / (double)gtRoiKeys.size();
+      double falseRoiVolumeRatio = detectedRoiBBkeys.size() ? (double)falseRoiBBkeys.size() / (double)detectedRoiBBkeys.size() : 0;
+      ROS_INFO_STREAM("Det vol ratio: " << coveredRoiVolumeRatio << ", False vol ratio: " << falseRoiVolumeRatio);
 
-    // Computations directly with ROI cells
-    octomap::KeySet true_roi_keys, false_roi_keys;
-    for (const octomap::OcTreeKey &key : roi_keys)
-    {
-      if (gtRoiKeys.find(key) != gtRoiKeys.end())
+      // Computations directly with ROI cells
+      octomap::KeySet true_roi_keys, false_roi_keys;
+      for (const octomap::OcTreeKey &key : roi_keys)
       {
-        true_roi_keys.insert(key);
+        if (gtRoiKeys.find(key) != gtRoiKeys.end())
+        {
+          true_roi_keys.insert(key);
+        }
+        else
+        {
+          false_roi_keys.insert(key);
+        }
       }
-      else
-      {
-        false_roi_keys.insert(key);
-      }
-    }
 
-    double passed_time = (currentTime - plannerStartTime).toSec();
-    //resultsFile << "Time (s), Detected ROIs, ROI percentage, Average distance, Average volume accuracy, Covered ROI volume, False ROI volume" << std::endl;
-    resultsFile << passed_time << ", " << roiPairs.size() << ", " << ((double)roiPairs.size() / (double)roi_locations.size()) << ", "
-                << average_dist << ", " << average_vol_accuracy << ", " << coveredRoiVolumeRatio << ", " << falseRoiVolumeRatio << ", "
-                << roi_keys.size() << ", " << true_roi_keys.size() << ", " << false_roi_keys.size() << std::endl;
+      double passed_time = (currentTime - plannerStartTime).toSec();
+      //resultsFile << "Time (s), Detected ROIs, ROI percentage, Average distance, Average volume accuracy, Covered ROI volume, False ROI volume" << std::endl;
+      resultsFile << passed_time << ", " << roiPairs.size() << ", " << ((double)roiPairs.size() / (double)roi_locations.size()) << ", "
+                  << average_dist << ", " << average_vol_accuracy << ", " << coveredRoiVolumeRatio << ", " << falseRoiVolumeRatio << ", "
+                  << roi_keys.size() << ", " << true_roi_keys.size() << ", " << false_roi_keys.size() << std::endl;
 
-    if (passed_time > PLANNING_TIME) // PLANNING_TIME s timeout
-    {
-      if (!configClient.getCurrentConfiguration(planner_config, ros::Duration(1)))
+      if (passed_time > PLANNING_TIME) // PLANNING_TIME s timeout
       {
-        ROS_ERROR("Could not contact configuration server");
+        if (!configClient.getCurrentConfiguration(planner_config, ros::Duration(1)))
+        {
+          ROS_ERROR("Could not contact configuration server");
+          break;
+        }
+        planner_config.activate_execution = false;
+        planner_config.mode = roi_viewpoint_planner::Planner_IDLE;
+        if (!configClient.setConfiguration(planner_config))
+        {
+          ROS_ERROR("Applying configuration not successful");
+          break;
+        }
         break;
       }
-      planner_config.activate_execution = false;
-      planner_config.mode = roi_viewpoint_planner::Planner_IDLE;
-      if (!configClient.setConfiguration(planner_config))
-      {
-        ROS_ERROR("Applying configuration not successful");
-        break;
-      }
-      break;
     }
+
+    resultsFile.close();
+
+    roi_viewpoint_planner_msgs::SaveOctomap srv_sm;
+    srv_sm.request.specify_filename = true;
+    srv_sm.request.name_is_prefix = false;
+    srv_sm.request.name = "result_tree_" + std::to_string(i) + ".ot";
+    if (saveOctomapClient.call(srv_sm))
+    {
+      if (!srv_sm.response.success)
+        ROS_WARN("Map could not be saved");
+    }
+    else
+    {
+      ROS_WARN("Map save service could not be called");
+    }
+
+    std_srvs::Trigger srv_pr;
+    if (resetPlannerClient.call(srv_pr))
+    {
+      if (!srv_pr.response.success)
+        ROS_WARN("Planner reset not successful");
+    }
+    else
+    {
+      ROS_WARN("Planner reset service could not be called");
+    }
+    tree_mtx.lock();
+    roiTree->clear();
+    roiTree->clearRoiKeys();
+    tree_mtx.unlock();
   }
-  resultsFile.close();
 }
