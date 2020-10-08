@@ -169,7 +169,7 @@ add_definitions(
 ## The recommended prefix ensures that target names across packages don't collide
 # add_executable(${PROJECT_NAME}_node src/octomap_vpp_node.cpp)
 add_executable(planner_node src/planner_node.cpp src/viewpoint_planner.cpp)
-add_executable(evaluate_planner src/evaluate_planner.cpp)
+add_executable(evaluate_planner src/evaluate_planner.cpp src/evaluator.cpp)
 add_executable(generate_gt_octree src/generate_gt_octree.cpp)
 add_executable(workspace_publisher src/workspace_publisher.cpp)
 
