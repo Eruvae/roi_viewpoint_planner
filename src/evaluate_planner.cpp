@@ -1,31 +1,4 @@
 #include <ros/ros.h>
-#include <ros/package.h>
-#include <dynamic_reconfigure/client.h>
-#include <roi_viewpoint_planner_msgs/PlannerConfig.h>
-#include <octomap_vpp/RoiOcTree.h>
-#include <octomap/AbstractOcTree.h>
-#include <octomap_msgs/Octomap.h>
-#include <octomap_msgs/conversions.h>
-#include <yaml-cpp/yaml.h>
-#include <fstream>
-#include <boost/thread/mutex.hpp>
-#include <boost/dynamic_bitset.hpp>
-#include <boost/numeric/ublas/matrix.hpp>
-#include <octomap_vpp/marching_cubes.h>
-#include <octomap_vpp/octomap_pcl.h>
-#include <pcl/segmentation/extract_clusters.h>
-#include <pcl/segmentation/region_growing.h>
-#include <pcl/features/normal_3d.h>
-#include <pcl/filters/extract_indices.h>
-#include <pcl/surface/convex_hull.h>
-#include <pcl/visualization/pcl_visualizer.h>
-#include <dynamic_reconfigure/server.h>
-#include <std_srvs/Trigger.h>
-#include <roi_viewpoint_planner_msgs/SaveOctomap.h>
-#include "roi_viewpoint_planner_msgs/EvaluatorConfig.h"
-#include "compute_cubes.h"
-#include "point_cloud_color_handler_clusters.h"
-
 #include "evaluator.h"
 
 int main(int argc, char **argv)

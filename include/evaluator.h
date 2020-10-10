@@ -117,6 +117,8 @@ class Evaluator
   EvaluationParameters results;
 
   boost::thread visualizeThread;
+  pcl::visualization::PointCloudColorHandler<pcl::PointXYZ>::Ptr gt_color_handler;
+  pcl::visualization::PointCloudColorHandler<pcl::PointXYZ>::Ptr roi_color_handler;
 
   ros::Publisher gt_pub;
   ros::Subscriber octomap_sub;
@@ -147,6 +149,8 @@ public:
   bool resetPlanner();
   bool saveOctree(const std::string &filename);
   void clearOctree();
+
+  bool readOctree(const std::string &filename);
 
   const EvaluationParameters& processDetectedRois();
 };

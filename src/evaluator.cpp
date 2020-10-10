@@ -3,8 +3,6 @@
 Evaluator::Evaluator(const ros::NodeHandle &nh, const ros::NodeHandle &nhp) : nh(nh), nhp(nhp), viewer(nullptr), vp1(0), vp2(1), viewer_initialized(false),
   roiTree(nullptr), server(nhp), visualizeThread(&Evaluator::visualizeLoop, this), configClient("/roi_viewpoint_planner")
 {
-  server.setCallback(boost::bind(&Evaluator::reconfigureCallback, this, boost::placeholders::_1, boost::placeholders::_2));
-
   if (!readGroundtruth())
   {
     ROS_WARN("Groundtruth could not be read; Evaluator state invalid");
@@ -28,6 +26,8 @@ Evaluator::Evaluator(const ros::NodeHandle &nh, const ros::NodeHandle &nhp) : nh
   }
 
   updateVisualizerGroundtruth();
+
+  server.setCallback(boost::bind(&Evaluator::reconfigureCallback, this, boost::placeholders::_1, boost::placeholders::_2));
 }
 
 bool Evaluator::readGroundtruth()
@@ -146,13 +146,18 @@ void Evaluator::computeGroundtruthPCL()
 
 void Evaluator::updateVisualizerGroundtruth()
 {
-  pcl::visualization::PointCloudColorHandlerClusters<pcl::PointXYZ> gt_color_handler(gt_pcl, gt_clusters);
+  gt_color_handler.reset(new pcl::visualization::PointCloudColorHandlerClusters<pcl::PointXYZ>(gt_pcl, gt_clusters));
   viewer_mtx.lock();
-  viewer->addPointCloud<pcl::PointXYZ> (gt_pcl, gt_color_handler, "gt_cloud", vp1);
-  for (size_t i = 0; i < gt_clusters.size(); i++)
+  viewer->removeAllPointClouds(vp1);
+  viewer->removeAllShapes(vp1);
+  viewer->addPointCloud<pcl::PointXYZ> (gt_pcl, *gt_color_handler, "gt_cloud", vp1);
+  if (config.show_hulls)
   {
-    std::string name = "gt_cluster_" + i;
-    viewer->addPolygonMesh<pcl::PointXYZ>(gt_hulls_clouds[i], gt_hulls_polygons[i], name, vp1);
+    for (size_t i = 0; i < gt_clusters.size(); i++)
+    {
+      std::string name = "gt_cluster_" + std::to_string(i);
+      viewer->addPolygonMesh<pcl::PointXYZ>(gt_hulls_clouds[i], gt_hulls_polygons[i], name, vp1);
+    }
   }
   viewer_mtx.unlock();
 }
@@ -161,16 +166,19 @@ void Evaluator::updateVisualizerDetections()
 {
   if (viewer_initialized.load())
   {
-    pcl::visualization::PointCloudColorHandlerClusters<pcl::PointXYZ> roi_color_handler(roi_pcl, clusters);
+    roi_color_handler.reset(new pcl::visualization::PointCloudColorHandlerClusters<pcl::PointXYZ>(roi_pcl, clusters));
     viewer_mtx.lock();
     viewer->removeAllPointClouds(vp2);
     viewer->removeAllShapes(vp2);
-    viewer->addPointCloud<pcl::PointXYZ> (roi_pcl, roi_color_handler, "roi_cloud", vp2);
+    viewer->addPointCloud<pcl::PointXYZ> (roi_pcl, *roi_color_handler, "roi_cloud", vp2);
     //viewer->addPointCloudNormals<pcl::PointXYZ, pcl::Normal> (roi_pcl, normal_cloud, 1, 0.02f, "roi_normals");
-    for (size_t i = 0; i < clusters.size(); i++)
+    if (config.show_hulls)
     {
-      std::string name = "cluster_" + i;
-      viewer->addPolygonMesh<pcl::PointXYZ>(hulls_clouds[i], hulls_polygons[i], name, vp2);
+      for (size_t i = 0; i < clusters.size(); i++)
+      {
+        std::string name = "cluster_" + std::to_string(i);
+        viewer->addPolygonMesh<pcl::PointXYZ>(hulls_clouds[i], hulls_polygons[i], name, vp2);
+      }
     }
     viewer_mtx.unlock();
   }
@@ -195,6 +203,11 @@ void Evaluator::reconfigureCallback(roi_viewpoint_planner::EvaluatorConfig &new_
   }
 
   config = new_config;
+
+  computeGroundtruthPCL();
+  updateVisualizerGroundtruth();
+  processDetectedRois();
+  updateVisualizerDetections();
 }
 
 void Evaluator::octomapCallback(const octomap_msgs::OctomapConstPtr& msg)
@@ -427,8 +440,34 @@ void Evaluator::clearOctree()
   tree_mtx.unlock();
 }
 
+bool Evaluator::readOctree(const std::string &filename)
+{
+  octomap_vpp::RoiOcTree *map = NULL;
+  octomap::AbstractOcTree *tree =  octomap::AbstractOcTree::read(filename);
+  if (!tree)
+    return false;
+
+  map = dynamic_cast<octomap_vpp::RoiOcTree*>(tree);
+  if(!map)
+  {
+    delete tree;
+    return false;
+  }
+  tree_mtx.lock();
+  if (roiTree)
+    delete roiTree;
+
+  roiTree = map;
+  roiTree->computeRoiKeys();
+  tree_mtx.unlock();
+  return true;
+}
+
 const EvaluationParameters& Evaluator::processDetectedRois()
 {
+  if (!roiTree)
+    return results;
+
   tree_mtx.lock();
   roiTree->computeRoiKeys();
   octomap::KeySet roi_keys = roiTree->getRoiKeys();

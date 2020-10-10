@@ -170,6 +170,7 @@ add_definitions(
 # add_executable(${PROJECT_NAME}_node src/octomap_vpp_node.cpp)
 add_executable(planner_node src/planner_node.cpp src/viewpoint_planner.cpp)
 add_executable(evaluate_planner src/evaluate_planner.cpp src/evaluator.cpp)
+add_executable(evaluate_saved_tree src/evaluate_saved_tree.cpp src/evaluator.cpp)
 add_executable(generate_gt_octree src/generate_gt_octree.cpp)
 add_executable(workspace_publisher src/workspace_publisher.cpp)
 
@@ -184,6 +185,7 @@ add_executable(workspace_publisher src/workspace_publisher.cpp)
 # add_dependencies(${PROJECT_NAME}_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 add_dependencies(planner_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 add_dependencies(evaluate_planner ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+add_dependencies(evaluate_saved_tree ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 add_dependencies(generate_gt_octree ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 add_dependencies(workspace_publisher ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
@@ -193,6 +195,7 @@ add_dependencies(workspace_publisher ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catki
 # )
 target_link_libraries(planner_node ${catkin_LIBRARIES} ${OCTOMAP_LIBRARIES})
 target_link_libraries(evaluate_planner ${catkin_LIBRARIES} ${OCTOMAP_LIBRARIES} ${YAMLCPP_LIBRARIES} ${PCL_LIBRARIES})
+target_link_libraries(evaluate_saved_tree ${catkin_LIBRARIES} ${OCTOMAP_LIBRARIES} ${YAMLCPP_LIBRARIES} ${PCL_LIBRARIES})
 target_link_libraries(generate_gt_octree ${catkin_LIBRARIES} ${OCTOMAP_LIBRARIES} ${YAMLCPP_LIBRARIES})
 target_link_libraries(workspace_publisher ${catkin_LIBRARIES} ${OCTOMAP_LIBRARIES})
 

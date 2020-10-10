@@ -26,7 +26,7 @@ class PointCloudColorHandlerClusters : public PointCloudColorHandler<PointT>
     PointCloudColorHandlerClusters () :
       PointCloudColorHandler<PointT> ()
     {
-      capable_ = true;
+      capable_ = false;
     }
 
     /** \brief Constructor. */
@@ -34,9 +34,9 @@ class PointCloudColorHandlerClusters : public PointCloudColorHandler<PointT>
       PointCloudColorHandler<PointT> (cloud)
     {
       capable_ = true;
+      unsigned int cluster_id = 0;
       for (const pcl::PointIndices &cluster : clusters)
       {
-        unsigned int cluster_id = 0;
         for (int index : cluster.indices)
         {
           clusterMap[index] = cluster_id;
