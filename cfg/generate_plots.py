@@ -3,43 +3,43 @@ import matplotlib.pyplot as plt
 import csv
 import bisect
 
-def readInterpolatedValues(files, times):
-    detrois = []
-    volaccs = []
+def readInterpolatedValues(files, times, columns, types):
+    results = [[] for _ in range(len(columns))]
     for filename in files:
-        r0, r1, r4 = [], [], []
+        c0 = [] # Times
+        cs = [[] for _ in range(len(columns))] # colums to read
         with open(filename,'r') as csvfile:
             csv_reader = csv.reader(csvfile, delimiter=',')
-            next(csv_reader)
+            column_names = next(csv_reader)
+            column_names = [column_names[i] for i in columns]
             for row in csv_reader:
-                r0.append(float(row[0]))
-                r1.append(int(row[1]))
-                r4.append(float(row[4]))
+                c0.append(float(row[0]))
+                for i in range(len(cs)):
+                    cs[i].append(types[i](row[columns[i]]))
     
         # interpolate data to whole seconds for easier averaging
-        r1_n, r4_n = [], []
-        ci = 0
+        cs_n = [[] for _ in range(len(columns))] # colums adjusted to specified times
+        ci = 0 # current index
         for t in times:
             if ci < len(times):
-                ci = bisect.bisect_left(r0, t, ci)
+                ci = bisect.bisect_left(c0, t, ci)
             if ci >= len(times): # end of times reached; keep last value
-                r1_n.append(r1[-1])
-                r4_n.append(r4[-1])
+                for i in range(len(cs_n)):
+                    cs_n[i].append(cs[i][-1])
             elif ci == 0: # if t smaller than first value, keep first
-                r1_n.append(r1[0])
-                r4_n.append(r4[0])
+                for i in range(len(cs_n)):
+                    cs_n[i].append(cs[i][0])
             else:
-                t1 = r0[ci - 1]
-                t2 = r0[ci]
-                dr = r1[ci - 1] * (t - t1) / (t2 - t1) + r1[ci] * (t2 - t) / (t2 - t1)
-                va = r4[ci - 1] * (t - t1) / (t2 - t1) + r4[ci] * (t2 - t) / (t2 - t1)
-                r1_n.append(int(dr)) 
-                r4_n.append(va)    
+                t1 = c0[ci - 1]
+                t2 = c0[ci]
+                for i in range(len(cs_n)):
+                    val = cs[i][ci - 1] * (t - t1) / (t2 - t1) + cs[i][ci] * (t2 - t) / (t2 - t1)
+                    cs_n[i].append(types[i](val))  
     
-        detrois.append(r1_n)
-        volaccs.append(r4_n)
+        for i in range(len(cs_n)):
+            results[i].append(cs_n[i])
 
-    return detrois, volaccs
+    return results, column_names
 
 
 auto_files = ['automatic/planner_results_0.csv', 'automatic/planner_results_1.csv', 'automatic/planner_results_2.csv', 'automatic/planner_results_3.csv', 'automatic/planner_results_4.csv', 'automatic/planner_results_5.csv', 'automatic/planner_results_6.csv', 'automatic/planner_results_7.csv', 'automatic/planner_results_8.csv', 'automatic/planner_results_9.csv']
@@ -48,43 +48,28 @@ contour_files = ['contours/planner_results_0.csv', 'contours/planner_results_1.c
 
 times = range(181)
 
-detrois_auto, volaccs_auto = readInterpolatedValues(auto_files, times)
-detrois_contours, volaccs_contours = readInterpolatedValues(contour_files, times)
+colums_to_read = [1, 4, 5, 8]
+types_to_read = [int, float, float, int]
 
-detroi_auto_avg = np.average(detrois_auto, axis=0)
-detroi_contours_avg = np.average(detrois_contours, axis=0)
+results_auto, plot_names = readInterpolatedValues(auto_files, times, colums_to_read, types_to_read)
+results_contours, _ = readInterpolatedValues(contour_files, times, colums_to_read, types_to_read)
 
-volacc_auto_avg = np.average(volaccs_auto, axis=0)
-volacc_contours_avg = np.average(volaccs_contours, axis=0)
+results_auto_avg = [np.average(results_auto[i], axis=0) for i in range(len(results_auto))]
+results_contours_avg = [np.average(results_contours[i], axis=0) for i in range(len(results_contours))]
 
-plt.figure(1)
+for i in range(len(plot_names)):
+    plt.figure(i)
 
-for detroi in detrois_auto:
-    plt.plot(times, detroi, 'C1--', alpha=0.2)
-for detroi in detrois_contours:
-    plt.plot(times, detroi, 'C2--', alpha=0.2)
+    for result in results_auto[i]:
+        plt.plot(times, result, 'C1--', alpha=0.2)
+    for result in results_contours[i]:
+        plt.plot(times, result, 'C2--', alpha=0.2)
 
-plt.plot(times, detroi_auto_avg, 'C1', linewidth=3.0)
-plt.plot(times, detroi_contours_avg, 'C2', linewidth=3.0)
+    plt.plot(times, results_auto_avg[i], 'C1', linewidth=3.0)
+    plt.plot(times, results_contours_avg[i], 'C2', linewidth=3.0)
 
-plt.xlabel('Time (s)')
-plt.ylabel('Detected ROIs')
-plt.title('Detected ROIs')
-plt.legend()
-plt.show()
-
-plt.figure(2)
-
-for volacc in volaccs_auto:
-    plt.plot(times, volacc, 'C1--', alpha=0.2)
-for volacc in volaccs_contours:
-    plt.plot(times, volacc, 'C2--', alpha=0.2)
-
-plt.plot(times, volacc_auto_avg, 'C1', linewidth=3.0)
-plt.plot(times, volacc_contours_avg, 'C2', linewidth=3.0)
-
-plt.xlabel('Time (s)')
-plt.ylabel('Volume accuracy')
-plt.title('Volume accuracy')
-plt.legend()
-plt.show()
+    plt.xlabel('Time (s)')
+    plt.ylabel(plot_names[i])
+    plt.title(plot_names[i])
+    plt.legend()
+    plt.show()
