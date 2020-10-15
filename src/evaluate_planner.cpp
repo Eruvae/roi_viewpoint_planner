@@ -9,7 +9,30 @@ int main(int argc, char **argv)
   ros::AsyncSpinner spinner(4);
   spinner.start();
 
-  Evaluator evaluator(nh, nhp);
+  // Read ROS parameters
+  double tree_resolution;
+  if (!nh.getParam("/roi_viewpoint_planner/tree_resolution", tree_resolution))
+  {
+    ROS_ERROR("Planning tree resolution not found, make sure the planner is started");
+    return -1;
+  }
+  std::string world_name;
+  if (!nh.getParam("/world_name", world_name))
+  {
+    ROS_ERROR("World name not specified; cannot load ground truth");
+    return -1;
+  }
+  const std::vector<std::string> mode_list = {"idle", "map_only", "automatic", "roi_contours", "roi_centers", "roi_adjacent", "exploration", "contours", "border"};
+  const std::string planning_mode_str = nhp.param<std::string>("planning_mode", "automatic");
+  auto mode_it = std::find(mode_list.begin(), mode_list.end(), planning_mode_str);
+  if (mode_it == mode_list.end())
+  {
+    ROS_ERROR("Specified planning mode not recognized");
+    return false;
+  }
+  int planning_mode = mode_it - mode_list.begin();
+
+  Evaluator evaluator(nh, nhp, true, world_name, tree_resolution, planning_mode);
 
   for (int i = 0; ros::ok() && i < 10; i++)
   {

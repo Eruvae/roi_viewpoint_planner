@@ -17,7 +17,10 @@ int main(int argc, char **argv)
 
   const std::string TREE_FILENAME = argv[1];
 
-  Evaluator evaluator(nh, nhp);
+  double tree_resolution = nh.param<double>("/roi_viewpoint_planner/tree_resolution", 0.01);
+  std::string world_name = nh.param<std::string>("/world_name", "world14");
+
+  Evaluator evaluator(nh, nhp, true, world_name, tree_resolution);
   if (!evaluator.readOctree(TREE_FILENAME))
   {
     ROS_ERROR("Octree file could not be read");

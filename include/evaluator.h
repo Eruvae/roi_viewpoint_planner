@@ -82,6 +82,11 @@ class Evaluator
   ros::NodeHandle nh;
   ros::NodeHandle nhp;
 
+  bool gt_comparison;
+  std::string world_name;
+  double tree_resolution;
+  int planning_mode;
+
   pcl::visualization::PCLVisualizer *viewer;
   int vp1, vp2;
   boost::mutex viewer_mtx;
@@ -91,8 +96,6 @@ class Evaluator
   boost::mutex tree_mtx;
   roi_viewpoint_planner::EvaluatorConfig config;
   dynamic_reconfigure::Server<roi_viewpoint_planner::EvaluatorConfig> server;
-
-  int planning_mode;
 
   std::vector<octomap::point3d> roi_locations;
   std::vector<octomap::point3d> roi_sizes;
@@ -114,6 +117,9 @@ class Evaluator
   std::vector<std::vector<pcl::Vertices>> hulls_polygons;
   std::vector<double> cluster_volumes;
 
+  boost::numeric::ublas::matrix<double> distances;
+  std::vector<IndexPair> roiPairs;
+
   EvaluationParameters results;
 
   boost::thread visualizeThread;
@@ -128,8 +134,10 @@ class Evaluator
 
   bool readGroundtruth();
   void computeGroundtruthPCL(); // call if clustering configuration is updated
+  void computeDetectionsPCL();
   void updateVisualizerGroundtruth();
   void updateVisualizerDetections();
+  void computePairsAndDistances();
 
   void reconfigureCallback(roi_viewpoint_planner::EvaluatorConfig &new_config, uint32_t level);
   void octomapCallback(const octomap_msgs::OctomapConstPtr& msg);
@@ -142,7 +150,8 @@ class Evaluator
                              std::vector<double> &cluster_volumes
                              );
 public:
-  Evaluator(const ros::NodeHandle &nh = ros::NodeHandle(), const ros::NodeHandle &nhp = ros::NodeHandle("~"));
+  Evaluator(const ros::NodeHandle &nh = ros::NodeHandle(), const ros::NodeHandle &nhp = ros::NodeHandle("~"), bool gt_comparison = true,
+            const std::string &world_name = "", double tree_resolution = 0.01, int planning_mode = 0);
 
   bool activatePlanner();
   bool stopPlanner();
