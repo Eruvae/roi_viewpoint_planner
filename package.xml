@@ -62,15 +62,15 @@
   <depend>octomap_ros</depend>
   <depend>octomap_msgs</depend>
   <depend>octomap_vpp</depend>
-  <depend>instance_segmentation_msgs</depend>
   <depend>pointcloud_roi_msgs</depend>
-  <depend>image_geometry</depend>
   <depend>moveit_ros_planning_interface</depend>
   <depend>eigen_conversions</depend>
   <depend>dynamic_reconfigure</depend>
-  <depend>trolley_remote</depend>
   <depend>roi_viewpoint_planner_msgs</depend>
   <depend>rosbag_storage</depend>
+  <!--depend>image_geometry</depend>
+  <depend>instance_segmentation_msgs</depend>
+  <depend>trolley_remote</depend-->
 
   <build_depend>message_generation</build_depend>
   <exec_depend>message_runtime</exec_depend>

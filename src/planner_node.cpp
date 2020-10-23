@@ -13,7 +13,7 @@
 #include "roi_viewpoint_planner_msgs/PlannerConfig.h"
 
 #include "octomap_vpp/marching_cubes.h"
-#include "trolley_remote/trolley_remote.h"
+//#include "trolley_remote/trolley_remote.h"
 
 ros::NodeHandle *nhp_pt;
 ViewpointPlanner *planner;

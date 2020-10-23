@@ -18,9 +18,9 @@
 #include <tf2_sensor_msgs/tf2_sensor_msgs.h>
 //#include <moveit_msgs/PlanningScene.h>
 #include <sensor_msgs/CameraInfo.h>
-#include <image_geometry/pinhole_camera_model.h>
+//#include <image_geometry/pinhole_camera_model.h>
 
-#include <instance_segmentation_msgs/Detections.h>
+//#include <instance_segmentation_msgs/Detections.h>
 #include <pointcloud_roi_msgs/PointcloudWithRoi.h>
 
 #include <moveit/robot_model_loader/robot_model_loader.h>

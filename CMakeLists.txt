@@ -15,15 +15,15 @@ set (CATKIN_DEPENDENCIES
     octomap_ros
     octomap_msgs
     octomap_vpp
-    instance_segmentation_msgs
     pointcloud_roi_msgs
-    image_geometry
     moveit_ros_planning_interface
     eigen_conversions
     dynamic_reconfigure
-    trolley_remote
     roi_viewpoint_planner_msgs
     rosbag_storage
+    #image_geometry
+    #instance_segmentation_msgs
+    #trolley_remote
 )
 
 ## Find catkin macros and libraries
