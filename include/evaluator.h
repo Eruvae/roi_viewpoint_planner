@@ -86,6 +86,7 @@ class Evaluator
   std::string world_name;
   double tree_resolution;
   int planning_mode;
+  bool use_pcl;
 
   pcl::visualization::PCLVisualizer *viewer;
   int vp1, vp2;
@@ -151,7 +152,7 @@ class Evaluator
                              );
 public:
   Evaluator(const ros::NodeHandle &nh = ros::NodeHandle(), const ros::NodeHandle &nhp = ros::NodeHandle("~"), bool gt_comparison = true,
-            const std::string &world_name = "", double tree_resolution = 0.01, int planning_mode = 0);
+            const std::string &world_name = "", double tree_resolution = 0.01, int planning_mode = 0, bool use_pcl = false);
 
   bool activatePlanner();
   bool stopPlanner();

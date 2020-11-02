@@ -18,16 +18,20 @@ int main(int argc, char **argv)
   const std::string TREE_FILENAME = argv[1];
 
   double tree_resolution = nh.param<double>("/roi_viewpoint_planner/tree_resolution", 0.01);
-  std::string world_name = nh.param<std::string>("/world_name", "world14");
 
-  Evaluator evaluator(nh, nhp, true, world_name, tree_resolution);
+  std::string world_name = nh.param<std::string>("/world_name", "");
+
+  //ROS_INFO_STREAM("World_name: " << world_name);
+
+  Evaluator evaluator(nh, nhp, world_name != "", world_name, tree_resolution);
   if (!evaluator.readOctree(TREE_FILENAME))
   {
     ROS_ERROR("Octree file could not be read");
     return -2;
   }
 
-  evaluator.processDetectedRois();
+  const EvaluationParameters& params = evaluator.processDetectedRois();
+  ROS_INFO_STREAM("Detected ROIs: " << params.total_roi_clusters);
 
   for(ros::Rate rate(1); ros::ok(); rate.sleep());
 }

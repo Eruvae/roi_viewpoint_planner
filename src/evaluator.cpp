@@ -1,9 +1,11 @@
 #include "evaluator.h"
 
-Evaluator::Evaluator(const ros::NodeHandle &nh, const ros::NodeHandle &nhp, bool gt_comparison, const std::string &world_name, double tree_resolution, int planning_mode) : nh(nh), nhp(nhp),
-  gt_comparison(gt_comparison), world_name(world_name), tree_resolution(tree_resolution), planning_mode(planning_mode), viewer(nullptr), vp1(0), vp2(1), viewer_initialized(false),
-  roiTree(new octomap_vpp::RoiOcTree(tree_resolution)), server(nhp), visualizeThread(&Evaluator::visualizeLoop, this), configClient("/roi_viewpoint_planner")
+Evaluator::Evaluator(const ros::NodeHandle &nh, const ros::NodeHandle &nhp, bool gt_comparison, const std::string &world_name, double tree_resolution, int planning_mode, bool use_pcl)
+  : nh(nh), nhp(nhp), gt_comparison(gt_comparison), world_name(world_name), tree_resolution(tree_resolution), planning_mode(planning_mode), use_pcl(use_pcl),
+    viewer(nullptr), vp1(0), vp2(1), viewer_initialized(false), roiTree(new octomap_vpp::RoiOcTree(tree_resolution)), server(nhp),
+    visualizeThread(&Evaluator::visualizeLoop, this), configClient("/roi_viewpoint_planner")
 {
+  gt_pub = this->nhp.advertise<visualization_msgs::Marker>("roi_gt", 10, true);
   if (gt_comparison)
   {
     if (!readGroundtruth())
@@ -14,7 +16,6 @@ Evaluator::Evaluator(const ros::NodeHandle &nh, const ros::NodeHandle &nhp, bool
 
     // Register publishers and subscribers
 
-    gt_pub = this->nhp.advertise<visualization_msgs::Marker>("roi_gt", 10, true);
     publishCubeVisualization(gt_pub, roi_locations, roi_sizes, COLOR_GREEN, "gt_rois");
   }
 
@@ -23,13 +24,16 @@ Evaluator::Evaluator(const ros::NodeHandle &nh, const ros::NodeHandle &nhp, bool
   saveOctomapClient = this->nh.serviceClient<roi_viewpoint_planner_msgs::SaveOctomap>("/roi_viewpoint_planner/save_octomap");
   resetPlannerClient = this->nh.serviceClient<std_srvs::Trigger>("/roi_viewpoint_planner/reset_planner");
 
-  while(!viewer_initialized.load())
+  if (use_pcl)
   {
-    ROS_INFO("Waiting for viewer initialization...");
-    ros::Duration(0.1).sleep();
-  }
+    while(!viewer_initialized.load())
+    {
+      ROS_INFO("Waiting for viewer initialization...");
+      ros::Duration(0.1).sleep();
+    }
 
-  updateVisualizerGroundtruth();
+    updateVisualizerGroundtruth();
+  }
 
   server.setCallback(boost::bind(&Evaluator::reconfigureCallback, this, boost::placeholders::_1, boost::placeholders::_2));
 }
@@ -115,7 +119,7 @@ bool Evaluator::readGroundtruth()
 
 void Evaluator::computeGroundtruthPCL()
 {
-  if (!gt_comparison)
+  if (!gt_comparison || !use_pcl)
     return;
 
   gt_clusters.clear();
@@ -129,6 +133,9 @@ void Evaluator::computeGroundtruthPCL()
 
 void Evaluator::computeDetectionsPCL()
 {
+  if (!use_pcl)
+    return;
+
   clusters.clear();
   hulls_clouds.clear();
   hulls_polygons.clear();
@@ -140,7 +147,7 @@ void Evaluator::computeDetectionsPCL()
 
 void Evaluator::updateVisualizerGroundtruth()
 {
-  if (!gt_comparison)
+  if (!gt_comparison || !use_pcl)
     return;
 
   gt_color_handler.reset(new pcl::visualization::PointCloudColorHandlerClusters<pcl::PointXYZ>(gt_pcl, gt_clusters));
@@ -201,10 +208,13 @@ void Evaluator::reconfigureCallback(roi_viewpoint_planner::EvaluatorConfig &new_
 
   config = new_config;
 
-  computeGroundtruthPCL();
-  updateVisualizerGroundtruth();
-  processDetectedRois();
-  updateVisualizerDetections();
+  if (use_pcl)
+  {
+    computeGroundtruthPCL();
+    updateVisualizerGroundtruth();
+    processDetectedRois();
+    updateVisualizerDetections();
+  }
 }
 
 void Evaluator::octomapCallback(const octomap_msgs::OctomapConstPtr& msg)
@@ -231,6 +241,9 @@ void Evaluator::octomapCallback(const octomap_msgs::OctomapConstPtr& msg)
 
 void Evaluator::visualizeLoop()
 {
+  if (!use_pcl)
+    return;
+
   viewer_mtx.lock();
   viewer = new pcl::visualization::PCLVisualizer("ROI viewer");
   if (gt_comparison)
@@ -544,9 +557,13 @@ const EvaluationParameters& Evaluator::processDetectedRois()
 
   tree_mtx.unlock();
 
-  computeDetectionsPCL();
+  publishCubeVisualization(gt_pub, detected_locs, detected_sizes, COLOR_RED, "detected_rois");
 
-  updateVisualizerDetections();
+  if (use_pcl)
+  {
+    computeDetectionsPCL();
+    updateVisualizerDetections();
+  }
 
   // ROS_INFO_STREAM("GT-Rois: " << roi_locations.size() << ", detected Rois: " << detected_locs.size());
 

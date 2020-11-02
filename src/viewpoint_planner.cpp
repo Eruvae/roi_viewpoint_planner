@@ -681,6 +681,7 @@ void ViewpointPlanner::publishViewpointVisualizations(const std::vector<Viewpoin
   geometry_msgs::PoseArray poseArr;
   poseArr.header.frame_id = map_frame;
   poseArr.header.stamp = ros::Time::now();
+  bool first = true;
   for (size_t i = 0; i < viewpoints.size(); i++)
   {
     visualization_msgs::Marker marker;
@@ -699,13 +700,20 @@ void ViewpointPlanner::publishViewpointVisualizations(const std::vector<Viewpoin
     marker.pose.orientation.w = 1.0;
     marker.scale.x = 0.01;
     marker.scale.y = 0.02;
-    marker.color = color;
+    if (first)
+    {
+      marker.color = COLOR_RED;
+      first = false;
+    }
+    else {
+      marker.color = color;
+    }
     //marker.lifetime = ros::Duration(2);
     marker.points.push_back(viewpoints[i].pose.position);
     marker.points.push_back(octomap::pointOctomapToMsg(viewpoints[i].target));
     markers.markers.push_back(marker);
 
-    visualization_msgs::Marker textMarker;
+    /*visualization_msgs::Marker textMarker;
     textMarker.header.frame_id = map_frame;
     textMarker.header.stamp = ros::Time();
     textMarker.ns = ns + "_texts";
@@ -721,7 +729,7 @@ void ViewpointPlanner::publishViewpointVisualizations(const std::vector<Viewpoin
     textMarker.color = color;
     //textMarker.lifetime = ros::Duration(2);
     textMarker.text = std::to_string(viewpoints[i].infoGain) + ", " + std::to_string(viewpoints[i].distance) + ", " + std::to_string(viewpoints[i].utility);
-    markers.markers.push_back(textMarker);
+    markers.markers.push_back(textMarker);*/
 
     poseArr.poses.push_back(viewpoints[i].pose);
   }

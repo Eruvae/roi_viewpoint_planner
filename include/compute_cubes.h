@@ -73,7 +73,7 @@ static inline void publishCubeVisualization(ros::Publisher &pub, const std::vect
   cube_msg.id = 0;
   cube_msg.type = visualization_msgs::Marker::LINE_LIST;
   cube_msg.color = col;
-  cube_msg.scale.x = 0.002;
+  cube_msg.scale.x = 0.01;
   cube_msg.pose.orientation.w = 1.0; // normalize quaternion
 
   for (size_t i = 0; i < centers.size(); i++)
