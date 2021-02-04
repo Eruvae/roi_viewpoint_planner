@@ -21,6 +21,7 @@ set (CATKIN_DEPENDENCIES
     dynamic_reconfigure
     roi_viewpoint_planner_msgs
     rosbag_storage
+    move_to_see_ros
     #image_geometry
     #instance_segmentation_msgs
     #trolley_remote

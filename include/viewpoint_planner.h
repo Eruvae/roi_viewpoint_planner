@@ -96,6 +96,7 @@ private:
   ros::Publisher plannerStatePub;
 
   ros::ServiceClient requestExecutionConfirmation;
+  ros::ServiceClient moveToSeeClient;
 
   std::string bag_write_filename;
   std::string bag_final_filename;
@@ -177,6 +178,8 @@ public:
 
   bool record_map_updates;
   bool record_viewpoints;
+
+  bool activate_move_to_see;
 
   // Planner parameters end
 

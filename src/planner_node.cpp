@@ -179,6 +179,10 @@ void reconfigureCallback(roi_viewpoint_planner::PlannerConfig &config, uint32_t 
   {
     planner->expl_sample_mode = (ViewpointPlanner::PlannerMode) config.auto_expl_sampling;
   }
+  if (level & (1 << 21)) // activate_move_to_see
+  {
+    planner->activate_move_to_see = config.activate_move_to_see;
+  }
   current_config = config;
 }
 
