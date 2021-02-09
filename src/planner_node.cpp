@@ -182,6 +182,9 @@ void reconfigureCallback(roi_viewpoint_planner::PlannerConfig &config, uint32_t 
   if (level & (1 << 21)) // activate_move_to_see
   {
     planner->activate_move_to_see = config.activate_move_to_see;
+    planner->move_to_see_exclusive = config.move_to_see_exclusive;
+    planner->m2s_delta_thresh = config.m2s_delta_thresh;
+    planner->m2s_max_steps = config.m2s_max_steps;
   }
   current_config = config;
 }

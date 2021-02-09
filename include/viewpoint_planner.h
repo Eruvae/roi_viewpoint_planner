@@ -158,6 +158,12 @@ public:
     NUM_MODES = 9 // Should be kept as last element if new modes are added
   } mode, roi_sample_mode, expl_sample_mode;
 
+  enum PlannerLoopState
+  {
+      NORMAL = 0,
+      M2S = 1
+  } loop_state;
+
   bool execute_plan;
   bool require_execution_confirmation;
 
@@ -180,6 +186,10 @@ public:
   bool record_viewpoints;
 
   bool activate_move_to_see;
+  bool move_to_see_exclusive;
+  double m2s_delta_thresh;
+  int m2s_max_steps;
+  int m2s_current_steps;
 
   // Planner parameters end
 

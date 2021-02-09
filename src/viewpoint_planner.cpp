@@ -29,10 +29,12 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, co
   joint_model_group(kinematic_model->getJointModelGroup("manipulator")),
   kinematic_state(new robot_state::RobotState(kinematic_model)),
   mode(IDLE),
+  loop_state(NORMAL),
   execute_plan(false),
   robotIsMoving(false),
   occupancyScanned(false),
-  roiScanned(false)
+  roiScanned(false),
+  m2s_current_steps(0)
 {
 
   std::stringstream fDateTime;
@@ -2079,21 +2081,6 @@ void ViewpointPlanner::plannerLoop()
     if (mode == MAP_ONLY)
       continue;
 
-    if (activate_move_to_see)
-    {
-      move_to_see_ros::GetGradient gradSrv;
-      if (moveToSeeClient.call(gradSrv))
-      {
-        const auto &resp = gradSrv.response;
-        ROS_INFO_STREAM("Gradient: " << resp.gradient.position.x << ", " << resp.gradient.position.y << ", " << resp.gradient.position.z);
-        ROS_INFO_STREAM("Delta: " << resp.delta);
-      }
-      else
-      {
-        ROS_INFO_STREAM("Move to see service not found");
-      }
-    }
-
     /*tree_mtx.lock();
     ros::Time vpEvalStart = ros::Time::now();
     double value = testTree.computeViewpointValue(viewpoint, 80.0 * M_PI / 180.0, 8, 6, 5.0);
@@ -2128,6 +2115,60 @@ void ViewpointPlanner::plannerLoop()
 
     tf2::Quaternion camQuat;
     tf2::fromMsg(camFrameTf.transform.rotation, camQuat);
+
+
+    if (activate_move_to_see && loop_state == M2S)
+    {
+      bool m2s_success = false;
+      move_to_see_ros::GetGradient gradSrv;
+      if (moveToSeeClient.call(gradSrv))
+      {
+        const auto &resp = gradSrv.response;
+        ROS_INFO_STREAM("Gradient: " << resp.gradient.position.x << ", " << resp.gradient.position.y << ", " << resp.gradient.position.z);
+        ROS_INFO_STREAM("Delta: " << resp.delta);
+
+        if (resp.delta > 0.f)
+        {
+            geometry_msgs::Pose commandPose;
+            tf2::Quaternion q_rot;
+            tf2::fromMsg(resp.gradient.orientation, q_rot);
+            tf2::Quaternion q_new = q_rot * camQuat;
+            q_new.normalize();
+
+            commandPose.position.x = camFrameTf.transform.translation.x + resp.gradient.position.x;
+            commandPose.position.y = camFrameTf.transform.translation.y + resp.gradient.position.y;
+            commandPose.position.z = camFrameTf.transform.translation.z + resp.gradient.position.z;
+            commandPose.orientation = tf2::toMsg(q_new);
+
+            if (moveToPose(transformToWorkspace(commandPose)))
+            {
+              ROS_INFO_STREAM("Succesfully moving with move to see");
+              m2s_success = true;
+              m2s_current_steps++;
+            }
+        }
+      }
+      else
+      {
+        ROS_INFO_STREAM("Move to see service not found");
+      }
+      if (!m2s_success || m2s_current_steps >= m2s_max_steps)
+      {
+        m2s_current_steps = 0;
+        loop_state = NORMAL;
+      }
+      else
+      {
+        continue;
+      }
+    }
+
+    if (move_to_see_exclusive)
+    {
+      loop_state = M2S;
+      m2s_current_steps = 0;
+      continue;
+    }
 
     std::vector<Viewpoint> roiSamplingVps, explSamplingVps;
     auto vpComp = [](const Viewpoint &a, const Viewpoint &b)
@@ -2240,6 +2281,7 @@ void ViewpointPlanner::plannerLoop()
       }*/
     }();
 
+    bool move_success = false;
     for (/*std::make_heap(nextViewpoints.begin(), nextViewpoints.end(), vpComp)*/; !nextViewpoints.empty(); std::pop_heap(nextViewpoints.begin(), nextViewpoints.end(), vpComp), nextViewpoints.pop_back())
     {
       const Viewpoint &vp = nextViewpoints.front();
@@ -2251,21 +2293,35 @@ void ViewpointPlanner::plannerLoop()
       if (use_cartesian_motion)
       {
         if (moveToPoseCartesian(transformToWorkspace(vp.pose)))
+        {
+          move_success = true;
           break;
+        }
       }
       else
       {
         if (compute_ik_when_sampling)
         {
           if (moveToState(*vp.joint_target))
+          {
+            move_success = true;
             break;
+          }
         }
         else
         {
           if (moveToPose(transformToWorkspace(vp.pose)))
+          {
+            move_success = true;
             break;
+          }
         }
       }
+    }
+    if (move_success && activate_move_to_see)
+    {
+        loop_state = M2S;
+        m2s_current_steps = 0;
     }
   }
 }
