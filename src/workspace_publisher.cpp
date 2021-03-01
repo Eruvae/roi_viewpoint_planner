@@ -22,7 +22,7 @@ int main(int argc, char **argv)
 
   // Load workspace
 
-  octomap_vpp::WorkspaceOcTree *workspaceTree, *samplingTree;
+  octomap_vpp::WorkspaceOcTree *workspaceTree = nullptr, *samplingTree = nullptr;
   octomap_msgs::Octomap ws_msg, st_msg;
 
   octomap::AbstractOcTree *tree = octomap::AbstractOcTree::read(wstree_file);

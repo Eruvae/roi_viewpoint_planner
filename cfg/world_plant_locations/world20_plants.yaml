@@ -1,0 +1,24 @@
+- model: VG07_6
+  location: [0.75, 1.25, 0.05]
+- model: VG07_6
+  location: [0.75, 0.75, 0.05]
+- model: VG07_6
+  location: [0.75, 0.25, 0.05]
+- model: VG07_6
+  location: [0.75, -0.25, 0.05]
+- model: VG07_6
+  location: [0.75, -0.75, 0.05]
+- model: VG07_6
+  location: [0.75, -1.25, 0.05]
+- model: VG07_6
+  location: [-0.75, 1.25, 0.05]
+- model: VG07_6
+  location: [-0.75, 0.75, 0.05]
+- model: VG07_6
+  location: [-0.75, 0.25, 0.05]
+- model: VG07_6
+  location: [-0.75, -0.25, 0.05]
+- model: VG07_6
+  location: [-0.75, -0.75, 0.05]
+- model: VG07_6
+  location: [-0.75, -1.25, 0.05]

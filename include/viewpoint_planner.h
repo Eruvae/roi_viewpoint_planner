@@ -56,6 +56,7 @@ namespace std {
 #include <octomap_vpp/roioctree_utils.h>
 
 #include <roi_viewpoint_planner_msgs/PlannerState.h>
+#include "rvp_types.h"
 #include "compute_cubes.h"
 
 #define PUBLISH_PLANNING_TIMES
@@ -63,6 +64,8 @@ namespace std {
 #ifdef PUBLISH_PLANNING_TIMES
 #include <roi_viewpoint_planner_msgs/PlanningTimes.h>
 #endif
+
+namespace roi_viewpoint_planner {
 
 // Constants
 
@@ -74,6 +77,22 @@ const std::string PC_GLOBAL = "/points_global";
 
 class ViewpointPlanner
 {
+  // Sampler friends
+  friend class SamplerBase;
+  friend class RoiContourSampler;
+  friend class RoiAdjacentSampler;
+  friend class RoiCenterSampler;
+  friend class ExplorationSampler;
+  friend class ContourSampler;
+  friend class BorderSampler;
+
+  // Utility friends
+  friend class UtilityBase;
+  friend class SingleRayUtility;
+  friend class MultiRayUtility;
+  friend class RoiVicinityUtility;
+  friend class RoiOcclusionUtility;
+
 private:
   octomap_vpp::RoiOcTree *planningTree;
   octomap_vpp::WorkspaceOcTree *workspaceTree;
@@ -192,17 +211,6 @@ public:
   int m2s_current_steps;
 
   // Planner parameters end
-
-  struct Viewpoint
-  {
-    geometry_msgs::Pose pose;
-    robot_state::RobotStatePtr joint_target;
-    octomap::point3d target;
-    double infoGain;
-    double distance;
-    double utility;
-    bool isFree;
-  };
 
   ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, const std::string &wstree_file, const std::string &sampling_tree_file, double tree_resolution,
                    const std::string &map_frame, const std::string &ws_frame);
@@ -339,5 +347,7 @@ public:
 
   void plannerLoop();
 };
+
+} // namespace roi_viewpoint_planner
 
 #endif // VIEWPOINT_PLANNER_H

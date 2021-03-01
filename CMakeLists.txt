@@ -155,6 +155,12 @@ add_definitions(
   ${PCL_DEFINITIONS}
 )
 
+set(VIEWPOINT_PLANNER_SRC_FILES
+  src/viewpoint_planner.cpp
+  src/viewpoint_samplers.cpp
+  src/viewpoint_utilities.cpp
+)
+
 ## Declare a C++ library
 # add_library(${PROJECT_NAME}
 #   src/${PROJECT_NAME}/octomap_vpp.cpp
@@ -169,7 +175,7 @@ add_definitions(
 ## With catkin_make all packages are built within a single CMake context
 ## The recommended prefix ensures that target names across packages don't collide
 # add_executable(${PROJECT_NAME}_node src/octomap_vpp_node.cpp)
-add_executable(planner_node src/planner_node.cpp src/viewpoint_planner.cpp)
+add_executable(planner_node src/planner_node.cpp ${VIEWPOINT_PLANNER_SRC_FILES})
 add_executable(evaluate_planner src/evaluate_planner.cpp src/evaluator.cpp)
 add_executable(evaluate_rosbag_no_gt src/evaluate_rosbag_no_gt.cpp src/evaluator.cpp)
 add_executable(evaluate_saved_tree src/evaluate_saved_tree.cpp src/evaluator.cpp)

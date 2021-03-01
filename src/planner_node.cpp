@@ -15,6 +15,8 @@
 #include "octomap_vpp/marching_cubes.h"
 //#include "trolley_remote/trolley_remote.h"
 
+using namespace roi_viewpoint_planner;
+
 ros::NodeHandle *nhp_pt;
 ViewpointPlanner *planner;
 dynamic_reconfigure::Server<roi_viewpoint_planner::PlannerConfig> *config_server;

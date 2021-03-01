@@ -8,6 +8,9 @@
 #include "octomap_vpp/octomap_transforms.h"
 #include "boost/date_time/posix_time/posix_time.hpp"
 
+namespace roi_viewpoint_planner
+{
+
 ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, const std::string &wstree_file, const std::string &sampling_tree_file, double tree_resolution,
                                    const std::string &map_frame, const std::string &ws_frame) :
   planningTree(new octomap_vpp::RoiOcTree(tree_resolution)),
@@ -678,7 +681,7 @@ tf2::Quaternion ViewpointPlanner::dirVecToQuat(octomath::Vector3 dirVec, const t
   return viewQuat;
 }
 
-void ViewpointPlanner::publishViewpointVisualizations(const std::vector<ViewpointPlanner::Viewpoint> &viewpoints, const std::string &ns, const std_msgs::ColorRGBA &color)
+void ViewpointPlanner::publishViewpointVisualizations(const std::vector<Viewpoint> &viewpoints, const std::string &ns, const std_msgs::ColorRGBA &color)
 {
   static std::unordered_map<std::string, size_t> last_marker_counts;
   visualization_msgs::MarkerArray markers;
@@ -1234,10 +1237,12 @@ void ViewpointPlanner::getFreeNeighbours6(const octomap::OcTreeKey &key, octomap
   }
 }
 
-std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleAroundMultiROICenters(const std::vector<octomap::point3d> &centers, const octomap::point3d &camPos, const tf2::Quaternion &camQuat)
+std::vector<Viewpoint> ViewpointPlanner::sampleAroundMultiROICenters(const std::vector<octomap::point3d> &centers, const octomap::point3d &camPos, const tf2::Quaternion &camQuat)
 {
   tf2::Matrix3x3 camMat(camQuat);
   tf2::Vector3 viewDir = camMat.getColumn(0);
+
+  boost::mutex::scoped_lock lock(tree_mtx);
 
   std::vector<Viewpoint> sampledPoints;
   if (centers.empty()) return sampledPoints;
@@ -1322,10 +1327,13 @@ std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleAroundMultiROIC
   return sampledPoints;
 }
 
-std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleContourPoints(const octomap::point3d &camPos, const tf2::Quaternion &camQuat)
+std::vector<Viewpoint> ViewpointPlanner::sampleContourPoints(const octomap::point3d &camPos, const tf2::Quaternion &camQuat)
 {
   tf2::Matrix3x3 camMat(camQuat);
   tf2::Vector3 viewDir = camMat.getColumn(0);
+
+  boost::mutex::scoped_lock lock(tree_mtx);
+
   std::vector<octomap::OcTreeKey> contourKeys;
   std::vector<Viewpoint> sampled_vps;
   //size_t total_nodes = 0, jumped_nodes = 0, rejected_nodes = 0, free_nodes = 0;
@@ -1436,18 +1444,22 @@ std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleContourPoints(c
   return sampled_vps;
 }
 
-std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleRoiContourPoints(const octomap::point3d &camPos, const tf2::Quaternion &camQuat)
+std::vector<Viewpoint> ViewpointPlanner::sampleRoiContourPoints(const octomap::point3d &camPos, const tf2::Quaternion &camQuat)
 {
+  boost::mutex::scoped_lock lock(tree_mtx);
+
   octomap::KeySet roi = planningTree->getRoiKeys();
   octomap::KeySet freeNeighbours;
   for (const octomap::OcTreeKey &key : roi)
   {
-    getFreeNeighbours6(key, freeNeighbours);
+    planningTree->getNeighborsInState(key, freeNeighbours, octomap_vpp::NodeProperty::OCCUPANCY, octomap_vpp::NodeState::FREE_NONROI, octomap_vpp::NB_6);
+    //getFreeNeighbours6(key, freeNeighbours);
   }
   std::vector<octomap::point3d> selectedPoints;
   for (const octomap::OcTreeKey &key : freeNeighbours)
   {
-    if (hasDirectUnknownNeighbour(key))
+    //if (hasDirectUnknownNeighbour(key))
+    if (planningTree->hasNeighborInState(key, octomap_vpp::NodeProperty::OCCUPANCY, octomap_vpp::NodeState::UNKNOWN, octomap_vpp::NB_6))
     {
       selectedPoints.push_back(planningTree->keyToCoord(key));
     }
@@ -1531,13 +1543,13 @@ std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleRoiContourPoint
   return sampledPoints;
 }
 
-std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleRoiAdjecentCountours(const octomap::point3d &camPos, const tf2::Quaternion &camQuat)
+std::vector<Viewpoint> ViewpointPlanner::sampleRoiAdjecentCountours(const octomap::point3d &camPos, const tf2::Quaternion &camQuat)
 {
   tf2::Matrix3x3 camMat(camQuat);
   tf2::Vector3 viewDir = camMat.getColumn(0);
   std::vector<Viewpoint> sampledPoints;
 
-  tree_mtx.lock();
+  boost::mutex::scoped_lock lock(tree_mtx);
 
   ros::Time inflationBegin = ros::Time::now();
   planningTree->computeInflatedRois(planningTree->getResolution(), 0.1);
@@ -1562,8 +1574,6 @@ std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleRoiAdjecentCoun
       }
     }
   }
-
-  tree_mtx.unlock();
 
   ROS_INFO_STREAM("Roi keys: " << roi_keys.size() << ", Inflated: " << inflated_roi_keys.size() << ", Contours: " << inflated_contours.size());
 
@@ -1640,7 +1650,7 @@ std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleRoiAdjecentCoun
 
 }
 
-std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleExplorationPoints(const octomap::point3d &camPos, const tf2::Quaternion &camQuat)
+std::vector<Viewpoint> ViewpointPlanner::sampleExplorationPoints(const octomap::point3d &camPos, const tf2::Quaternion &camQuat)
 {
   tf2::Matrix3x3 camMat(camQuat);
   tf2::Vector3 viewDir = camMat.getColumn(0);
@@ -1668,7 +1678,7 @@ std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleExplorationPoin
 
   const size_t TOTAL_SAMPLE_TRIES = 30;
 
-  tree_mtx.lock();
+  boost::mutex::scoped_lock lock(tree_mtx);
 
   for (size_t i = 0; i < TOTAL_SAMPLE_TRIES; i++)
   {
@@ -1701,18 +1711,17 @@ std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleExplorationPoin
     vp.isFree = true;
     sampledPoints.push_back(vp);
   }
-  tree_mtx.unlock();
 
   return sampledPoints;
 }
 
-std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleBorderPoints(const octomap::point3d &pmin, const octomap::point3d &pmax, const octomap::point3d &camPos, const tf2::Quaternion &camQuat)
+std::vector<Viewpoint> ViewpointPlanner::sampleBorderPoints(const octomap::point3d &pmin, const octomap::point3d &pmax, const octomap::point3d &camPos, const tf2::Quaternion &camQuat)
 {
   tf2::Matrix3x3 camMat(camQuat);
   tf2::Vector3 viewDir = camMat.getColumn(0);
   std::vector<Viewpoint> sampledPoints;
 
-  tree_mtx.lock();
+  boost::mutex::scoped_lock lock(tree_mtx);
 
   std::vector<octomap::OcTreeKey> viewpoint_candidates;
 
@@ -1736,7 +1745,6 @@ std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleBorderPoints(co
   if (viewpoint_candidates.empty())
   {
     ROS_INFO_STREAM("No occ-unknown border found");
-    tree_mtx.unlock();
     return sampledPoints;
   }
 
@@ -1772,7 +1780,6 @@ std::vector<ViewpointPlanner::Viewpoint> ViewpointPlanner::sampleBorderPoints(co
     sampledPoints.push_back(vp);// add node to border list
   }
 
-  tree_mtx.unlock();
   return sampledPoints;
 }
 
@@ -2127,7 +2134,7 @@ void ViewpointPlanner::plannerLoop()
         ROS_INFO_STREAM("Gradient: " << resp.gradient.position.x << ", " << resp.gradient.position.y << ", " << resp.gradient.position.z);
         ROS_INFO_STREAM("Delta: " << resp.delta);
 
-        if (resp.delta > 0.f)
+        if (resp.delta > m2s_delta_thresh)
         {
             geometry_msgs::Pose commandPose;
             tf2::Quaternion q_rot;
@@ -2140,7 +2147,7 @@ void ViewpointPlanner::plannerLoop()
             commandPose.position.z = camFrameTf.transform.translation.z + resp.gradient.position.z;
             commandPose.orientation = tf2::toMsg(q_new);
 
-            if (moveToPose(transformToWorkspace(commandPose)))
+            if (execute_plan && moveToPose(transformToWorkspace(commandPose)))
             {
               ROS_INFO_STREAM("Succesfully moving with move to see");
               m2s_success = true;
@@ -2325,3 +2332,6 @@ void ViewpointPlanner::plannerLoop()
     }
   }
 }
+
+
+} // namespace roi_viewpoint_planner

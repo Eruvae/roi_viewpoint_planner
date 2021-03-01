@@ -50,7 +50,7 @@ int main(int argc, char **argv)
         ROS_INFO("Planner could not be activated, retrying in 1 second...");
     }
 
-    const double PLANNING_TIME = 180;
+    const double PLANNING_TIME = 300;
     ros::Time plannerStartTime = ros::Time::now();
 
     for (ros::Rate rate(1); ros::ok(); rate.sleep())
