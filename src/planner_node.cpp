@@ -87,9 +87,16 @@ bool moveToState(roi_viewpoint_planner_msgs::MoveToState::Request &req, roi_view
 void reconfigureCallback(roi_viewpoint_planner::PlannerConfig &config, uint32_t level)
 {
   ROS_INFO_STREAM("Reconfigure callback called");
-  if (level & (1 << 0) && config.mode >= 0 && config.mode < ViewpointPlanner::NUM_MODES) // change mode
+  if (level & (1 << 0)) // change mode
   {
-    planner->mode = (ViewpointPlanner::PlannerMode) config.mode;
+    planner->mode = static_cast<ViewpointPlanner::PlannerMode>(config.mode);
+    planner->roi_sample_mode = static_cast<ViewpointPlanner::PlannerMode>(config.auto_roi_sampling);
+    planner->expl_sample_mode = static_cast<ViewpointPlanner::PlannerMode>(config.auto_expl_sampling);
+
+    planner->roiMaxSamples = config.roi_max_samples;
+    planner->roiUtil = static_cast<roi_viewpoint_planner::UtilityType>(config.roi_util);
+    planner->explMaxSamples = config.expl_max_samples;
+    planner->explUtil = static_cast<roi_viewpoint_planner::UtilityType>(config.expl_util);
   }
   if (level & (1 << 1)) // activate execution
   {
@@ -172,14 +179,6 @@ void reconfigureCallback(roi_viewpoint_planner::PlannerConfig &config, uint32_t 
   if (level & (1 << 18)) // record_viewpoints
   {
     planner->record_viewpoints = config.record_viewpoints;
-  }
-  if (level & (1 << 19)) // auto_roi_sampling
-  {
-    planner->roi_sample_mode = (ViewpointPlanner::PlannerMode) config.auto_roi_sampling;
-  }
-  if (level & (1 << 20)) // auto_expl_sampling
-  {
-    planner->expl_sample_mode = (ViewpointPlanner::PlannerMode) config.auto_expl_sampling;
   }
   if (level & (1 << 21)) // activate_move_to_see
   {

@@ -58,6 +58,8 @@ namespace std {
 #include <roi_viewpoint_planner_msgs/PlannerState.h>
 #include "rvp_types.h"
 #include "compute_cubes.h"
+#include "viewpoint_samplers.h"
+#include "viewpoint_utilities.h"
 
 #define PUBLISH_PLANNING_TIMES
 
@@ -177,6 +179,16 @@ public:
     NUM_MODES = 9 // Should be kept as last element if new modes are added
   } mode, roi_sample_mode, expl_sample_mode;
 
+  static inline bool isRoiSampler(PlannerMode m)
+  {
+      return m >= SAMPLE_ROI_CONTOURS && m <= SAMPLE_ROI_CENTERS;
+  }
+
+  static inline bool isExplSampler(PlannerMode m)
+  {
+      return m >= SAMPLE_EXPLORATION && m <= SAMPLE_BORDER;
+  }
+
   enum PlannerLoopState
   {
       NORMAL = 0,
@@ -209,6 +221,9 @@ public:
   double m2s_delta_thresh;
   int m2s_max_steps;
   int m2s_current_steps;
+
+  size_t roiMaxSamples, explMaxSamples;
+  UtilityType roiUtil, explUtil;
 
   // Planner parameters end
 

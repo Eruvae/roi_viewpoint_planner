@@ -117,22 +117,22 @@ public:
     virtual std::vector<Viewpoint> sampleViewpoints() override;
 };
 
-static SamplerBase* createSampler(SamplerType sampler_type, ViewpointPlanner *planner, const octomap::point3d &camPos, const tf2::Quaternion &camQuat, size_t maxSamples, UtilityType util_type)
+static std::unique_ptr<SamplerBase> createSampler(SamplerType sampler_type, ViewpointPlanner *planner, const octomap::point3d &camPos, const tf2::Quaternion &camQuat, size_t maxSamples, UtilityType util_type)
 {
     switch (sampler_type)
     {
     case SamplerType::ROI_CONTOUR_SAMPLER:
-        return new RoiContourSampler(planner, camPos, camQuat, maxSamples, util_type);
+        return std::unique_ptr<SamplerBase>(new RoiContourSampler(planner, camPos, camQuat, maxSamples, util_type));
     case SamplerType::ROI_ADJACENT_SAMPLER:
-        return new RoiAdjacentSampler(planner, camPos, camQuat, maxSamples, util_type);
+        return std::unique_ptr<SamplerBase>(new RoiAdjacentSampler(planner, camPos, camQuat, maxSamples, util_type));
     case SamplerType::ROI_CENTER_SAMPLER:
-        return new RoiCenterSampler(planner, camPos, camQuat, maxSamples, util_type);
+        return std::unique_ptr<SamplerBase>(new RoiCenterSampler(planner, camPos, camQuat, maxSamples, util_type));
     case SamplerType::EXPLORATION_SAMPLER:
-        return new ExplorationSampler(planner, camPos, camQuat, maxSamples, util_type);
+        return std::unique_ptr<SamplerBase>(new ExplorationSampler(planner, camPos, camQuat, maxSamples, util_type));
     case SamplerType::CONTOUR_SAMPLER:
-        return new ContourSampler(planner, camPos, camQuat, maxSamples, util_type);
+        return std::unique_ptr<SamplerBase>(new ContourSampler(planner, camPos, camQuat, maxSamples, util_type));
     case SamplerType::BORDER_SAMPLER:
-        return new BorderSampler(planner, camPos, camQuat, maxSamples, util_type);
+        return std::unique_ptr<SamplerBase>(new BorderSampler(planner, camPos, camQuat, maxSamples, util_type));
     }
     return nullptr;
 }

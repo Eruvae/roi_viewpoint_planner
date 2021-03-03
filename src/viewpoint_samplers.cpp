@@ -17,6 +17,7 @@ SamplerBase::~SamplerBase()
 
 std::vector<Viewpoint> RoiContourSampler::sampleViewpoints()
 {
+    boost::mutex::scoped_lock lock(planner->tree_mtx);
     std::vector<Viewpoint> sampledPoints;
 
     octomap::KeySet roi = planner->planningTree->getRoiKeys();
@@ -73,11 +74,11 @@ std::vector<Viewpoint> RoiContourSampler::sampleViewpoints()
 
 std::vector<Viewpoint> RoiAdjacentSampler::sampleViewpoints()
 {
+    boost::mutex::scoped_lock lock(planner->tree_mtx);
+
     std::vector<Viewpoint> sampledPoints;
 
     tf2::Matrix3x3 camMat(camQuat);
-
-    planner->tree_mtx.lock();
 
     ros::Time inflationBegin = ros::Time::now();
     planner->planningTree->computeInflatedRois(planner->planningTree->getResolution(), 0.1);
@@ -102,8 +103,6 @@ std::vector<Viewpoint> RoiAdjacentSampler::sampleViewpoints()
         }
       }
     }
-
-    planner->tree_mtx.unlock();
 
     ROS_INFO_STREAM("Roi keys: " << roi_keys.size() << ", Inflated: " << inflated_roi_keys.size() << ", Contours: " << inflated_contours.size());
 
@@ -146,12 +145,15 @@ std::vector<Viewpoint> RoiAdjacentSampler::sampleViewpoints()
 
 std::vector<Viewpoint> RoiCenterSampler::sampleViewpoints()
 {
+    boost::mutex::scoped_lock lock(planner->tree_mtx);
     std::vector<Viewpoint> sampledPoints;
     return sampledPoints;
 }
 
 std::vector<Viewpoint> ExplorationSampler::sampleViewpoints()
 {
+    boost::mutex::scoped_lock lock(planner->tree_mtx);
+
     std::vector<Viewpoint> sampledPoints;
 
     octomap::point3d wsMin_tf = planner->transformToMapFrame(planner->wsMin), wsMax_tf = planner->transformToMapFrame(planner->wsMax);
@@ -173,8 +175,6 @@ std::vector<Viewpoint> ExplorationSampler::sampleViewpoints()
     std::uniform_real_distribution<float> stxDist(stMin_tf.x(), stMax_tf.x());
     std::uniform_real_distribution<float> styDist(stMin_tf.y(), stMax_tf.y());
     std::uniform_real_distribution<float> stzDist(stMin_tf.z(), stMax_tf.z());
-
-    planner->tree_mtx.lock();
 
     for (size_t i = 0; i < maxSamples; i++)
     {
@@ -207,14 +207,14 @@ std::vector<Viewpoint> ExplorationSampler::sampleViewpoints()
       }
 
     }
-    planner->tree_mtx.unlock();
-
 
     return sampledPoints;
 }
 
 std::vector<Viewpoint> ContourSampler::sampleViewpoints()
 {
+    boost::mutex::scoped_lock lock(planner->tree_mtx);
+
     std::vector<Viewpoint> sampledPoints;
 
     std::vector<octomap::OcTreeKey> contourKeys;
@@ -289,12 +289,13 @@ std::vector<Viewpoint> ContourSampler::sampleViewpoints()
 
 std::vector<Viewpoint> BorderSampler::sampleViewpoints()
 {
+    boost::mutex::scoped_lock lock(planner->tree_mtx);
+
     std::vector<Viewpoint> sampledPoints;
 
     octomap::point3d box_min(camPos.x() - 0.5f, camPos.y() - 0.5f, camPos.z() - 0.5f);
     octomap::point3d box_max(camPos.x() + 0.5f, camPos.y() + 0.5f, camPos.z() + 0.5f);
 
-    planner->tree_mtx.lock();
     std::vector<octomap::OcTreeKey> viewpoint_candidates;
 
     for (auto it = planner->planningTree->begin_leafs_bbx(box_min, box_max), end = planner->planningTree->end_leafs_bbx(); it != end; it++)
@@ -315,7 +316,6 @@ std::vector<Viewpoint> BorderSampler::sampleViewpoints()
     if (viewpoint_candidates.empty())
     {
       ROS_INFO_STREAM("No occ-unknown border found");
-      planner->tree_mtx.unlock();
       return sampledPoints;
     }
 
@@ -348,7 +348,6 @@ std::vector<Viewpoint> BorderSampler::sampleViewpoints()
       }
     }
 
-    planner->tree_mtx.unlock();
     return sampledPoints;
 }
 
