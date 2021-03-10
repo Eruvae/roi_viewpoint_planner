@@ -141,10 +141,10 @@ double RoiVicinityUtility::computeRoiWeightedIG(const octomap::KeyRay &ray)
       const octomap::OcTreeKey inf_key = inflated_roi_tree->coordToKey(planner->planningTree->keyToCoord(key));
       octomap_vpp::RoiOcTreeNode *node = planner->planningTree->search(key);
       octomap_vpp::InflatedRoiOcTreeNode *inf_node = inflated_roi_tree->search(inf_key);
-      double weight = 1.0;
+      double weight = 0.5;
       if (inf_node != nullptr)
       {
-          weight += static_cast<double>(inf_node->getValue());
+          weight += static_cast<double>(inf_node->getValue()) * 0.5;
       }
       if (node == nullptr)
       {
@@ -168,7 +168,7 @@ double RoiVicinityUtility::computeRoiWeightedIG(const octomap::KeyRay &ray)
 
 bool RoiVicinityUtility::computeUtility(Viewpoint &vp, const octomap::point3d &origin, const octomap::point3d &target, const tf2::Quaternion &viewQuat)
 {
-    octomap::pose6d viewpose(origin, octomath::Quaternion(
+    /*octomap::pose6d viewpose(origin, octomath::Quaternion(
                                  static_cast<float>(viewQuat.w()),
                                  static_cast<float>(viewQuat.x()),
                                  static_cast<float>(viewQuat.y()),
@@ -200,6 +200,15 @@ bool RoiVicinityUtility::computeUtility(Viewpoint &vp, const octomap::point3d &o
     }
     value /= x_steps * y_steps;
     vp.infoGain = value;
+    vp.distance = (origin - sampler->camPos).norm();
+    vp.utility = vp.infoGain - 0.2 * vp.distance;
+    vp.isFree = true;
+    return true;*/
+
+    octomap::KeyRay ray;
+    planner->planningTree->computeRayKeys(origin, target, ray);
+    double gain = computeRoiWeightedIG(ray);
+    vp.infoGain = gain;
     vp.distance = (origin - sampler->camPos).norm();
     vp.utility = vp.infoGain - 0.2 * vp.distance;
     vp.isFree = true;

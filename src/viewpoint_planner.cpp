@@ -707,7 +707,7 @@ void ViewpointPlanner::publishViewpointVisualizations(const std::vector<Viewpoin
     marker.pose.orientation.w = 1.0;
     marker.scale.x = 0.01;
     marker.scale.y = 0.02;
-    if (first)
+    if (first && ns == "roiContourPoints")
     {
       marker.color = COLOR_RED;
       first = false;
@@ -720,7 +720,7 @@ void ViewpointPlanner::publishViewpointVisualizations(const std::vector<Viewpoin
     marker.points.push_back(octomap::pointOctomapToMsg(viewpoints[i].target));
     markers.markers.push_back(marker);
 
-    visualization_msgs::Marker textMarker;
+    /*visualization_msgs::Marker textMarker;
     textMarker.header.frame_id = map_frame;
     textMarker.header.stamp = ros::Time();
     textMarker.ns = ns + "_texts";
@@ -736,7 +736,7 @@ void ViewpointPlanner::publishViewpointVisualizations(const std::vector<Viewpoin
     textMarker.color = color;
     //textMarker.lifetime = ros::Duration(2);
     textMarker.text = std::to_string(viewpoints[i].infoGain) + ", " + std::to_string(viewpoints[i].distance) + ", " + std::to_string(viewpoints[i].utility);
-    markers.markers.push_back(textMarker);
+    markers.markers.push_back(textMarker);*/
 
     poseArr.poses.push_back(viewpoints[i].pose);
   }
@@ -752,14 +752,14 @@ void ViewpointPlanner::publishViewpointVisualizations(const std::vector<Viewpoin
     marker.type = visualization_msgs::Marker::ARROW;
     marker.action = visualization_msgs::Marker::DELETE;
     markers.markers.push_back(marker);
-    visualization_msgs::Marker textMarker;
+    /*visualization_msgs::Marker textMarker;
     textMarker.header.frame_id = map_frame;
     textMarker.header.stamp = ros::Time();
     textMarker.ns = ns + "_texts";
     textMarker.id = i;
     textMarker.type = visualization_msgs::Marker::TEXT_VIEW_FACING;
     textMarker.action = visualization_msgs::Marker::DELETE;
-    markers.markers.push_back(textMarker);
+    markers.markers.push_back(textMarker);*/
   }
   last_marker_counts[ns] = viewpoints.size();
   viewArrowVisPub.publish(markers);
