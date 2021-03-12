@@ -16,8 +16,9 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, co
   planningTree(new octomap_vpp::RoiOcTree(tree_resolution)),
   map_frame(map_frame),
   ws_frame(ws_frame),
-  workspaceTree(NULL),
-  samplingTree(NULL),
+  workspaceTree(nullptr),
+  samplingTree(nullptr),
+  evaluator(nullptr),
   wsMin(-FLT_MAX, -FLT_MAX, -FLT_MAX),
   wsMax(FLT_MAX, FLT_MAX, FLT_MAX),
   stMin(-FLT_MAX, -FLT_MAX, -FLT_MAX),
@@ -204,6 +205,10 @@ ViewpointPlanner::~ViewpointPlanner()
   rename(bag_write_filename.c_str(), bag_final_filename.c_str());
 }
 
+bool ViewpointPlanner::initializeEvaluator()
+{
+    return false;
+}
 
 /*void ViewpointPlanner::publishOctomapToPlanningScene(const octomap_msgs::Octomap &map_msg)
 {

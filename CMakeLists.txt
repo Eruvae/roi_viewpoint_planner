@@ -3,6 +3,9 @@ project(roi_viewpoint_planner)
 
 ## Compile as C++11, supported in ROS Kinetic and newer
 add_compile_options(-std=c++17)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
 set (CATKIN_DEPENDENCIES
     roscpp
@@ -159,6 +162,7 @@ set(VIEWPOINT_PLANNER_SRC_FILES
   src/viewpoint_planner.cpp
   src/viewpoint_samplers.cpp
   src/viewpoint_utilities.cpp
+  src/evaluator.cpp
 )
 
 ## Declare a C++ library
@@ -202,7 +206,7 @@ add_dependencies(workspace_publisher ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catki
 # target_link_libraries(${PROJECT_NAME}_node
 #   ${catkin_LIBRARIES}
 # )
-target_link_libraries(planner_node ${catkin_LIBRARIES} ${OCTOMAP_LIBRARIES})
+target_link_libraries(planner_node ${catkin_LIBRARIES} ${OCTOMAP_LIBRARIES} ${YAMLCPP_LIBRARIES} ${PCL_LIBRARIES})
 target_link_libraries(evaluate_planner ${catkin_LIBRARIES} ${OCTOMAP_LIBRARIES} ${YAMLCPP_LIBRARIES} ${PCL_LIBRARIES})
 target_link_libraries(evaluate_rosbag_no_gt ${catkin_LIBRARIES} ${OCTOMAP_LIBRARIES} ${YAMLCPP_LIBRARIES} ${PCL_LIBRARIES})
 target_link_libraries(evaluate_saved_tree ${catkin_LIBRARIES} ${OCTOMAP_LIBRARIES} ${YAMLCPP_LIBRARIES} ${PCL_LIBRARIES})

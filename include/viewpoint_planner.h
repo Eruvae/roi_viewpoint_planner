@@ -60,6 +60,7 @@ namespace std {
 #include "compute_cubes.h"
 #include "viewpoint_samplers.h"
 #include "viewpoint_utilities.h"
+#include "evaluator.h"
 
 #define PUBLISH_PLANNING_TIMES
 
@@ -99,6 +100,7 @@ private:
   octomap_vpp::RoiOcTree *planningTree;
   octomap_vpp::WorkspaceOcTree *workspaceTree;
   octomap_vpp::WorkspaceOcTree *samplingTree;
+  Evaluator *evaluator;
   octomap::point3d wsMin, wsMax;
   octomap::point3d stMin, stMax;
   tf2_ros::Buffer tfBuffer;
@@ -231,6 +233,8 @@ public:
                    const std::string &map_frame, const std::string &ws_frame);
 
   ~ViewpointPlanner();
+
+  bool initializeEvaluator();
 
   // Set planner parameters
 
