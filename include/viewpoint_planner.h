@@ -61,6 +61,7 @@ namespace std {
 #include "viewpoint_samplers.h"
 #include "viewpoint_utilities.h"
 #include "evaluator.h"
+#include "planner_interfaces/direct_planner_interface.h"
 
 #define PUBLISH_PLANNING_TIMES
 
@@ -96,8 +97,11 @@ class ViewpointPlanner
   friend class RoiVicinityUtility;
   friend class RoiOcclusionUtility;
 
+  // Planner interface friends
+  friend class DirectPlannerInterface;
+
 private:
-  octomap_vpp::RoiOcTree *planningTree;
+  std::shared_ptr<octomap_vpp::RoiOcTree> planningTree;
   octomap_vpp::WorkspaceOcTree *workspaceTree;
   octomap_vpp::WorkspaceOcTree *samplingTree;
   Evaluator *evaluator;

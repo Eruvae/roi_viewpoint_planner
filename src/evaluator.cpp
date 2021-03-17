@@ -1,11 +1,17 @@
 #include "evaluator.h"
 
-Evaluator::Evaluator(const ros::NodeHandle &nh, const ros::NodeHandle &nhp, bool gt_comparison, const std::string &world_name, double tree_resolution, int planning_mode, bool use_pcl)
-  : nh(nh), nhp(nhp), gt_comparison(gt_comparison), world_name(world_name), tree_resolution(tree_resolution), planning_mode(planning_mode), use_pcl(use_pcl),
-    viewer(nullptr), vp1(0), vp2(1), viewer_initialized(false), roiTree(new octomap_vpp::RoiOcTree(tree_resolution)), server(nhp),
-    visualizeThread(&Evaluator::visualizeLoop, this), configClient("/roi_viewpoint_planner")
+#include "viewpoint_planner.h"
+
+namespace roi_viewpoint_planner
 {
-  gt_pub = this->nhp.advertise<visualization_msgs::Marker>("roi_gt", 10, true);
+
+Evaluator::Evaluator(std::shared_ptr<PlannerInterface> planner, ros::NodeHandle &nhp,
+                     bool gt_comparison, const std::string &world_name, double tree_resolution, bool use_pcl)
+  : planner(planner), gt_comparison(gt_comparison), world_name(world_name), tree_resolution(tree_resolution), use_pcl(use_pcl),
+    viewer(nullptr), vp1(0), vp2(1), viewer_initialized(false), server(nhp),
+    visualizeThread(&Evaluator::visualizeLoop, this)
+{
+  gt_pub = nhp.advertise<visualization_msgs::Marker>("roi_gt", 10, true);
   if (gt_comparison)
   {
     if (!readGroundtruth())
@@ -18,11 +24,6 @@ Evaluator::Evaluator(const ros::NodeHandle &nh, const ros::NodeHandle &nhp, bool
 
     publishCubeVisualization(gt_pub, roi_locations, roi_sizes, COLOR_GREEN, "gt_rois");
   }
-
-  octomap_sub = this->nh.subscribe("/octomap", 10, &Evaluator::octomapCallback, this);
-
-  saveOctomapClient = this->nh.serviceClient<roi_viewpoint_planner_msgs::SaveOctomap>("/roi_viewpoint_planner/save_octomap");
-  resetPlannerClient = this->nh.serviceClient<std_srvs::Trigger>("/roi_viewpoint_planner/reset_planner");
 
   if (use_pcl)
   {
@@ -79,8 +80,8 @@ bool Evaluator::readGroundtruth()
   gtRoiKeys.clear();
   for (size_t i = 0; i < roi_locations.size(); i++)
   {
-    octomap::OcTreeKey minKey = roiTree->coordToKey(roi_locations[i] - roi_sizes[i] * 0.5);
-    octomap::OcTreeKey maxKey = roiTree->coordToKey(roi_locations[i] + roi_sizes[i] * 0.5);
+    octomap::OcTreeKey minKey = planner->getPlanningTree()->coordToKey(roi_locations[i] - roi_sizes[i] * 0.5);
+    octomap::OcTreeKey maxKey = planner->getPlanningTree()->coordToKey(roi_locations[i] + roi_sizes[i] * 0.5);
     octomap::OcTreeKey curKey = minKey;
     for (curKey[0] = minKey[0]; curKey[0] <= maxKey[0]; curKey[0]++)
     {
@@ -217,28 +218,6 @@ void Evaluator::reconfigureCallback(roi_viewpoint_planner::EvaluatorConfig &new_
   }
 }
 
-void Evaluator::octomapCallback(const octomap_msgs::OctomapConstPtr& msg)
-{
-  octomap::AbstractOcTree* tree = octomap_msgs::msgToMap(*msg);
-  if (tree){
-    octomap_vpp::RoiOcTree* newRoiTree = dynamic_cast<octomap_vpp::RoiOcTree*>(tree);
-    if(newRoiTree){
-      tree_mtx.lock();
-      delete roiTree;
-      roiTree = newRoiTree;
-      tree_mtx.unlock();
-    }
-    else {
-      ROS_ERROR("Wrong octree type received; expecting ROI octree");
-      delete tree;
-    }
-  }
-  else
-  {
-    ROS_ERROR("Failed to deserialize octree message");
-  }
-}
-
 void Evaluator::visualizeLoop()
 {
   if (!use_pcl)
@@ -366,116 +345,6 @@ bool Evaluator::computeHullsAndVolumes(pcl::PointCloud<pcl::PointXYZ>::ConstPtr 
   return true;
 }
 
-bool Evaluator::activatePlanner()
-{
-  roi_viewpoint_planner::PlannerConfig planner_config;
-  if (!configClient.getCurrentConfiguration(planner_config, ros::Duration(1)))
-  {
-    ROS_ERROR("Could not contact configuration server");
-    return false;
-  }
-  planner_config.activate_execution = true;
-  planner_config.require_execution_confirmation = false;
-  planner_config.auto_expl_sampling = roi_viewpoint_planner::Planner_SAMPLE_CONTOURS;
-  planner_config.mode = planning_mode;
-  if (!configClient.setConfiguration(planner_config))
-  {
-    ROS_ERROR("Applying configuration not successful");
-    return false;
-  }
-  return true;
-}
-
-bool Evaluator::stopPlanner()
-{
-  roi_viewpoint_planner::PlannerConfig planner_config;
-  if (!configClient.getCurrentConfiguration(planner_config, ros::Duration(1)))
-  {
-    ROS_ERROR("Could not contact configuration server");
-    return false;
-  }
-  planner_config.activate_execution = false;
-  planner_config.mode = roi_viewpoint_planner::Planner_IDLE;
-  if (!configClient.setConfiguration(planner_config))
-  {
-    ROS_ERROR("Applying configuration not successful");
-    return false;
-  }
-  return true;
-}
-
-bool Evaluator::resetPlanner()
-{
-  std_srvs::Trigger srv_pr;
-  if (resetPlannerClient.call(srv_pr))
-  {
-    if (!srv_pr.response.success)
-    {
-      ROS_WARN("Planner reset not successful");
-      return false;
-    }
-  }
-  else
-  {
-    ROS_WARN("Planner reset service could not be called");
-    return false;
-  }
-  return true;
-}
-
-bool Evaluator::saveOctree(const std::string &filename)
-{
-  roi_viewpoint_planner_msgs::SaveOctomap srv_sm;
-  srv_sm.request.specify_filename = true;
-  srv_sm.request.name_is_prefix = false;
-  srv_sm.request.name = filename;
-  if (saveOctomapClient.call(srv_sm))
-  {
-    if (!srv_sm.response.success)
-    {
-      ROS_WARN("Map could not be saved");
-      return false;
-    }
-  }
-  else
-  {
-    ROS_WARN("Map save service could not be called");
-    return false;
-  }
-  return true;
-}
-
-void Evaluator::clearOctree()
-{
-  tree_mtx.lock();
-  roiTree->clear();
-  roiTree->clearRoiKeys();
-  tree_mtx.unlock();
-}
-
-bool Evaluator::readOctree(const std::string &filename)
-{
-  octomap_vpp::RoiOcTree *map = NULL;
-  octomap::AbstractOcTree *tree =  octomap::AbstractOcTree::read(filename);
-  if (!tree)
-    return false;
-
-  map = dynamic_cast<octomap_vpp::RoiOcTree*>(tree);
-  if(!map)
-  {
-    delete tree;
-    return false;
-  }
-  tree_mtx.lock();
-  if (roiTree)
-    delete roiTree;
-
-  roiTree = map;
-  roiTree->computeRoiKeys();
-  tree_mtx.unlock();
-  return true;
-}
-
 void Evaluator::computePairsAndDistances()
 {
   distances.clear();
@@ -524,10 +393,11 @@ void Evaluator::computePairsAndDistances()
 
 const EvaluationParameters& Evaluator::processDetectedRois()
 {
+  std::shared_ptr<octomap_vpp::RoiOcTree> roiTree = planner->getPlanningTree();
   if (!roiTree)
     return results;
 
-  tree_mtx.lock();
+  planner->getTreeMutex().lock();
   roiTree->computeRoiKeys();
   octomap::KeySet roi_keys = roiTree->getRoiKeys();
   std::tie(detected_locs, detected_sizes) = roiTree->getClusterCentersWithVolume();
@@ -555,7 +425,7 @@ const EvaluationParameters& Evaluator::processDetectedRois()
   auto isRoi = [](const octomap_vpp::RoiOcTree &tree, const octomap_vpp::RoiOcTreeNode *node) { return tree.isNodeROI(node); };
   roi_pcl = octomap_vpp::octomapToPcl<octomap_vpp::RoiOcTree, pcl::PointXYZ>(*roiTree, isRoi);
 
-  tree_mtx.unlock();
+  planner->getTreeMutex().unlock();
 
   publishCubeVisualization(gt_pub, detected_locs, detected_sizes, COLOR_RED, "detected_rois");
 
@@ -600,7 +470,7 @@ const EvaluationParameters& Evaluator::processDetectedRois()
   octomap::KeySet detectedRoiBBkeys;
   octomap::KeySet correctRoiBBkeys;
   octomap::KeySet falseRoiBBkeys;
-  tree_mtx.lock();
+  planner->getTreeMutex().lock();
   for (size_t i = 0; i < detected_locs.size(); i++)
   {
     octomap::OcTreeKey minKey = roiTree->coordToKey(detected_locs[i] - detected_sizes[i] * 0.5);
@@ -628,7 +498,7 @@ const EvaluationParameters& Evaluator::processDetectedRois()
       }
     }
   }
-  tree_mtx.unlock();
+  planner->getTreeMutex().unlock();
   //ROS_INFO_STREAM("Detected key count: " << detectedRoiBBkeys.size() << ", correct: " << correctRoiBBkeys.size() << ", false: " << falseRoiBBkeys.size());
 
 
@@ -676,4 +546,6 @@ const EvaluationParameters& Evaluator::processDetectedRois()
   }
 
   return results;
+}
+
 }

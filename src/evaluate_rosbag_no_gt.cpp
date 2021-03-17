@@ -1,5 +1,8 @@
 #include <ros/ros.h>
 #include "evaluator.h"
+#include "planner_interfaces/external_planner_interface.h"
+
+using namespace roi_viewpoint_planner;
 
 int main(int argc, char **argv)
 {
@@ -9,7 +12,8 @@ int main(int argc, char **argv)
   ros::AsyncSpinner spinner(4);
   spinner.start();
 
-  Evaluator evaluator(nh, nhp, false, "", 0.01, roi_viewpoint_planner::Planner_MAP_ONLY);
+  std::shared_ptr<ExternalPlannerInterface> planner(new ExternalPlannerInterface(nh, roi_viewpoint_planner::Planner_MAP_ONLY, 0.01));
+  Evaluator evaluator(planner, nhp, false, "", 0.01);
 
   const std::string resultsFileName = "planner_results.csv";
   std::ofstream resultsFile(resultsFileName);
@@ -18,7 +22,7 @@ int main(int argc, char **argv)
   bool planner_active = false;
   for(ros::Rate rate(1); ros::ok() && !planner_active; rate.sleep())
   {
-    planner_active = evaluator.activatePlanner();
+    planner_active = planner->activatePlanner();
     if (planner_active)
       ROS_INFO("Planner activated");
     else

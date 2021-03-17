@@ -1,5 +1,8 @@
 #include <ros/ros.h>
 #include "evaluator.h"
+#include "planner_interfaces/external_planner_interface.h"
+
+using namespace roi_viewpoint_planner;
 
 int main(int argc, char **argv)
 {
@@ -32,7 +35,8 @@ int main(int argc, char **argv)
   }
   int planning_mode = mode_it - mode_list.begin();
 
-  Evaluator evaluator(nh, nhp, true, world_name, tree_resolution, planning_mode);
+  std::shared_ptr<ExternalPlannerInterface> planner(new ExternalPlannerInterface(nh, planning_mode, tree_resolution));
+  Evaluator evaluator(planner, nhp, true, world_name, tree_resolution);
 
   for (int i = 0; ros::ok() && i < 20; i++)
   {
@@ -43,7 +47,7 @@ int main(int argc, char **argv)
     bool planner_active = false;
     for(ros::Rate rate(1); ros::ok() && !planner_active; rate.sleep())
     {
-      planner_active = evaluator.activatePlanner();
+      planner_active = planner->activatePlanner();
       if (planner_active)
         ROS_INFO("Planner activated");
       else
@@ -69,7 +73,7 @@ int main(int argc, char **argv)
       {
         for(ros::Rate rate(1); ros::ok() && planner_active; rate.sleep())
         {
-          planner_active = !evaluator.stopPlanner();
+          planner_active = !planner->stopPlanner();
           if (!planner_active)
             ROS_INFO("Planner stopped");
           else
@@ -84,7 +88,7 @@ int main(int argc, char **argv)
     bool octree_saved = false;
     for(ros::Rate rate(1); ros::ok() && !octree_saved; rate.sleep())
     {
-      octree_saved = evaluator.saveOctree("result_tree_" + std::to_string(i));
+      octree_saved = planner->saveOctree("result_tree_" + std::to_string(i));
       if (octree_saved)
         ROS_INFO("Saving octree successful");
       else
@@ -94,13 +98,13 @@ int main(int argc, char **argv)
     bool planner_reset = false;
     for(ros::Rate rate(1); ros::ok() && !planner_reset; rate.sleep())
     {
-      planner_reset = evaluator.resetPlanner();
+      planner_reset = planner->resetPlanner();
       if (planner_reset)
         ROS_INFO("Planner reset successful");
       else
         ROS_INFO("Planner could not be resetted, retrying in 1 second...");
     }
 
-    evaluator.clearOctree();
+    planner->clearOctree();
   }
 }

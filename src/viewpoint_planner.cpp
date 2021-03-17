@@ -2056,8 +2056,7 @@ int ViewpointPlanner::loadOctomap(const std::string &filename)
     return -2;
   }
   tree_mtx.lock();
-  delete planningTree;
-  planningTree = map;
+  planningTree.reset(map);
   planningTree->computeRoiKeys();
   tree_mtx.unlock();
   publishMap();

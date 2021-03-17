@@ -163,6 +163,17 @@ set(VIEWPOINT_PLANNER_SRC_FILES
   src/viewpoint_samplers.cpp
   src/viewpoint_utilities.cpp
   src/evaluator.cpp
+  src/planner_interfaces/direct_planner_interface.cpp
+)
+
+set (EVALUATOR_EXT_PLANNER_SRC_FILES
+  src/evaluator.cpp
+  src/planner_interfaces/external_planner_interface.cpp
+)
+
+set (EVALUATOR_SAVED_TREE_SRC_FILES
+  src/evaluator.cpp
+  src/planner_interfaces/saved_tree_interface.cpp
 )
 
 ## Declare a C++ library
@@ -180,9 +191,9 @@ set(VIEWPOINT_PLANNER_SRC_FILES
 ## The recommended prefix ensures that target names across packages don't collide
 # add_executable(${PROJECT_NAME}_node src/octomap_vpp_node.cpp)
 add_executable(planner_node src/planner_node.cpp ${VIEWPOINT_PLANNER_SRC_FILES})
-add_executable(evaluate_planner src/evaluate_planner.cpp src/evaluator.cpp)
-add_executable(evaluate_rosbag_no_gt src/evaluate_rosbag_no_gt.cpp src/evaluator.cpp)
-add_executable(evaluate_saved_tree src/evaluate_saved_tree.cpp src/evaluator.cpp)
+add_executable(evaluate_planner src/evaluate_planner.cpp ${EVALUATOR_EXT_PLANNER_SRC_FILES})
+add_executable(evaluate_rosbag_no_gt src/evaluate_rosbag_no_gt.cpp ${EVALUATOR_EXT_PLANNER_SRC_FILES})
+add_executable(evaluate_saved_tree src/evaluate_saved_tree.cpp ${EVALUATOR_SAVED_TREE_SRC_FILES})
 add_executable(generate_gt_octree src/generate_gt_octree.cpp)
 add_executable(workspace_publisher src/workspace_publisher.cpp)
 

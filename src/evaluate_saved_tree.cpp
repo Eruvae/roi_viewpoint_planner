@@ -1,6 +1,10 @@
 #include <ros/ros.h>
 #include "evaluator.h"
 
+#include "planner_interfaces/saved_tree_interface.h"
+
+using namespace roi_viewpoint_planner;
+
 int main(int argc, char **argv)
 {
   ros::init(argc, argv, "evaluate_saved_tree");
@@ -23,12 +27,15 @@ int main(int argc, char **argv)
 
   //ROS_INFO_STREAM("World_name: " << world_name);
 
-  Evaluator evaluator(nh, nhp, world_name != "", world_name, tree_resolution);
-  if (!evaluator.readOctree(TREE_FILENAME))
+  std::shared_ptr<SavedTreeInterface> interface(new SavedTreeInterface(tree_resolution));
+  if (!interface->readOctree(TREE_FILENAME))
   {
     ROS_ERROR("Octree file could not be read");
     return -2;
   }
+
+  Evaluator evaluator(interface, nhp, world_name != "", world_name, tree_resolution);
+
 
   const EvaluationParameters& params = evaluator.processDetectedRois();
   ROS_INFO_STREAM("Detected ROIs: " << params.total_roi_clusters);

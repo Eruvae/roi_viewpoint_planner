@@ -30,6 +30,7 @@
 #include "roi_viewpoint_planner_msgs/EvaluatorConfig.h"
 #include "compute_cubes.h"
 #include "point_cloud_color_handler_clusters.h"
+#include "planner_interface.h"
 
 namespace YAML {
 template<>
@@ -55,6 +56,9 @@ struct convert<octomap::point3d> {
 };
 }
 
+namespace roi_viewpoint_planner
+{
+
 struct IndexPair
 {
   IndexPair(size_t gt_ind, size_t det_ind) : gt_ind(gt_ind), det_ind(det_ind) {}
@@ -76,16 +80,13 @@ struct EvaluationParameters
   size_t false_roi_key_count;
 };
 
-
 class Evaluator
 {
-  ros::NodeHandle nh;
-  ros::NodeHandle nhp;
+  std::shared_ptr<PlannerInterface> planner;
 
   bool gt_comparison;
   std::string world_name;
   double tree_resolution;
-  int planning_mode;
   bool use_pcl;
 
   pcl::visualization::PCLVisualizer *viewer;
@@ -93,8 +94,6 @@ class Evaluator
   boost::mutex viewer_mtx;
   std::atomic_bool viewer_initialized;
 
-  octomap_vpp::RoiOcTree *roiTree;
-  boost::mutex tree_mtx;
   roi_viewpoint_planner::EvaluatorConfig config;
   dynamic_reconfigure::Server<roi_viewpoint_planner::EvaluatorConfig> server;
 
@@ -128,10 +127,6 @@ class Evaluator
   pcl::visualization::PointCloudColorHandler<pcl::PointXYZ>::Ptr roi_color_handler;
 
   ros::Publisher gt_pub;
-  ros::Subscriber octomap_sub;
-  dynamic_reconfigure::Client<roi_viewpoint_planner::PlannerConfig> configClient;
-  ros::ServiceClient saveOctomapClient;
-  ros::ServiceClient resetPlannerClient;
 
   bool readGroundtruth();
   void computeGroundtruthPCL(); // call if clustering configuration is updated
@@ -151,18 +146,12 @@ class Evaluator
                              std::vector<double> &cluster_volumes
                              );
 public:
-  Evaluator(const ros::NodeHandle &nh = ros::NodeHandle(), const ros::NodeHandle &nhp = ros::NodeHandle("~"), bool gt_comparison = true,
-            const std::string &world_name = "", double tree_resolution = 0.01, int planning_mode = 0, bool use_pcl = false);
-
-  bool activatePlanner();
-  bool stopPlanner();
-  bool resetPlanner();
-  bool saveOctree(const std::string &filename);
-  void clearOctree();
-
-  bool readOctree(const std::string &filename);
+  Evaluator(std::shared_ptr<PlannerInterface> planner, ros::NodeHandle &nhp,
+            bool gt_comparison = true, const std::string &world_name = "", double tree_resolution = 0.01, bool use_pcl = false);
 
   const EvaluationParameters& processDetectedRois();
 };
+
+} // namespace roi_viewpoint_planner
 
 #endif // EVALUATOR_H
