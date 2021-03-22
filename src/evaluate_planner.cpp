@@ -14,16 +14,9 @@ int main(int argc, char **argv)
 
   // Read ROS parameters
   double tree_resolution;
-  if (!nh.getParam("/roi_viewpoint_planner/tree_resolution", tree_resolution))
+  if (!nh.param<double>("/roi_viewpoint_planner/tree_resolution", tree_resolution, 0.01))
   {
-    ROS_ERROR("Planning tree resolution not found, make sure the planner is started");
-    return -1;
-  }
-  std::string world_name;
-  if (!nh.getParam("/world_name", world_name))
-  {
-    ROS_ERROR("World name not specified; cannot load ground truth");
-    return -1;
+    ROS_WARN("Planning tree resolution not found, using 0.01 as default");
   }
   const std::vector<std::string> mode_list = {"idle", "map_only", "automatic", "roi_contours", "roi_centers", "roi_adjacent", "exploration", "contours", "border"};
   const std::string planning_mode_str = nhp.param<std::string>("planning_mode", "automatic");
@@ -36,7 +29,7 @@ int main(int argc, char **argv)
   int planning_mode = mode_it - mode_list.begin();
 
   std::shared_ptr<ExternalPlannerInterface> planner(new ExternalPlannerInterface(nh, planning_mode, tree_resolution));
-  Evaluator evaluator(planner, nhp, true, world_name, tree_resolution);
+  Evaluator evaluator(planner, nh, nhp, true);
 
   for (int i = 0; ros::ok() && i < 20; i++)
   {

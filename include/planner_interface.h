@@ -11,6 +11,7 @@ class PlannerInterface
 {
 public:
   virtual std::shared_ptr<octomap_vpp::RoiOcTree> getPlanningTree() = 0;
+  virtual double getTreeResolution() = 0;
   virtual boost::mutex& getTreeMutex() = 0;
 };
 

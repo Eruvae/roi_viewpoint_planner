@@ -6,6 +6,7 @@
 #include <dynamic_reconfigure/client.h>
 #include <roi_viewpoint_planner_msgs/PlannerConfig.h>
 #include <octomap_vpp/RoiOcTree.h>
+#include <octomap_vpp/CountingOcTree.h>
 #include <octomap/AbstractOcTree.h>
 #include <octomap/octomap_types.h>
 #include <octomap/OcTreeKey.h>
@@ -31,6 +32,7 @@
 #include "compute_cubes.h"
 #include "point_cloud_color_handler_clusters.h"
 #include "planner_interface.h"
+#include "gt_octree_loader.h"
 
 namespace YAML {
 template<>
@@ -82,11 +84,12 @@ struct EvaluationParameters
 
 class Evaluator
 {
+private:
   std::shared_ptr<PlannerInterface> planner;
+  std::unique_ptr<GtOctreeLoader> gtLoader;
 
   bool gt_comparison;
   std::string world_name;
-  double tree_resolution;
   bool use_pcl;
 
   pcl::visualization::PCLVisualizer *viewer;
@@ -127,6 +130,7 @@ class Evaluator
   pcl::visualization::PointCloudColorHandler<pcl::PointXYZ>::Ptr roi_color_handler;
 
   ros::Publisher gt_pub;
+  ros::Publisher gt_fruit_pub;
 
   bool readGroundtruth();
   void computeGroundtruthPCL(); // call if clustering configuration is updated
@@ -139,6 +143,8 @@ class Evaluator
   void octomapCallback(const octomap_msgs::OctomapConstPtr& msg);
   void visualizeLoop();
 
+  octomap_vpp::CountingOcTree* generateCountingOctree(pcl::PointCloud<pcl::PointXYZ>::Ptr pc, std::vector<pcl::PointIndices> clusters, const std::string &name);
+
   bool clusterWithPCL(pcl::PointCloud<pcl::PointXYZ>::ConstPtr input_cloud, std::vector<pcl::PointIndices> &clusters, pcl::PointCloud<pcl::Normal>::Ptr normal_cloud = nullptr);
   bool computeHullsAndVolumes(pcl::PointCloud<pcl::PointXYZ>::ConstPtr input_cloud, const std::vector<pcl::PointIndices> &clusters,
                              std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr> &hulls_clouds,
@@ -146,8 +152,7 @@ class Evaluator
                              std::vector<double> &cluster_volumes
                              );
 public:
-  Evaluator(std::shared_ptr<PlannerInterface> planner, ros::NodeHandle &nhp,
-            bool gt_comparison = true, const std::string &world_name = "", double tree_resolution = 0.01, bool use_pcl = false);
+  Evaluator(std::shared_ptr<PlannerInterface> planner, ros::NodeHandle &nh, ros::NodeHandle &nhp, bool gt_comparison = true, bool use_pcl = false);
 
   const EvaluationParameters& processDetectedRois();
 };

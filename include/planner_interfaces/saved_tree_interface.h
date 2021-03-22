@@ -17,6 +17,7 @@ public:
   bool readOctree(const std::string &filename);
 
   virtual std::shared_ptr<octomap_vpp::RoiOcTree> getPlanningTree();
+  virtual double getTreeResolution();
   virtual boost::mutex& getTreeMutex();
 };
 

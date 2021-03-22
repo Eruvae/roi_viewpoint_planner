@@ -43,6 +43,11 @@ std::shared_ptr<octomap_vpp::RoiOcTree> ExternalPlannerInterface::getPlanningTre
   return planningTree;
 }
 
+double ExternalPlannerInterface::getTreeResolution()
+{
+  return planningTree->getResolution();
+}
+
 boost::mutex& ExternalPlannerInterface::getTreeMutex()
 {
   return tree_mtx;

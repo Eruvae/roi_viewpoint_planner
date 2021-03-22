@@ -15,6 +15,7 @@ public:
   DirectPlannerInterface(roi_viewpoint_planner::ViewpointPlanner *planner);
 
   virtual std::shared_ptr<octomap_vpp::RoiOcTree> getPlanningTree();
+  virtual double getTreeResolution();
   virtual boost::mutex& getTreeMutex();
 };
 

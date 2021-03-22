@@ -238,7 +238,7 @@ public:
 
   ~ViewpointPlanner();
 
-  bool initializeEvaluator();
+  bool initializeEvaluator(ros::NodeHandle &nh, ros::NodeHandle &nhp);
 
   // Set planner parameters
 

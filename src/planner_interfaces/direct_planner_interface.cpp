@@ -18,4 +18,9 @@ std::shared_ptr<octomap_vpp::RoiOcTree> DirectPlannerInterface::getPlanningTree(
   return planner->planningTree;
 }
 
+double DirectPlannerInterface::getTreeResolution()
+{
+  return planner->planningTree->getResolution();
+}
+
 }

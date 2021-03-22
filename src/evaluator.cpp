@@ -5,16 +5,21 @@
 namespace roi_viewpoint_planner
 {
 
-Evaluator::Evaluator(std::shared_ptr<PlannerInterface> planner, ros::NodeHandle &nhp,
-                     bool gt_comparison, const std::string &world_name, double tree_resolution, bool use_pcl)
-  : planner(planner), gt_comparison(gt_comparison), world_name(world_name), tree_resolution(tree_resolution), use_pcl(use_pcl),
+Evaluator::Evaluator(std::shared_ptr<PlannerInterface> planner, ros::NodeHandle &nh, ros::NodeHandle &nhp, bool gt_comparison, bool use_pcl)
+  : planner(planner), gt_comparison(gt_comparison), use_pcl(use_pcl),
     viewer(nullptr), vp1(0), vp2(1), viewer_initialized(false), server(nhp),
     visualizeThread(&Evaluator::visualizeLoop, this)
 {
   gt_pub = nhp.advertise<visualization_msgs::Marker>("roi_gt", 10, true);
+  gt_fruit_pub = nhp.advertise<octomap_msgs::Octomap>("gt_fruits", 10, true);
   if (gt_comparison)
   {
-    if (!readGroundtruth())
+    if (!nh.param<std::string>("/world_name", world_name, ""))
+    {
+      ROS_WARN("World name not specified, cannot load ground truth; Evaluator state invalid");
+      return;
+    }
+    else if (!readGroundtruth())
     {
       ROS_WARN("Groundtruth could not be read; Evaluator state invalid");
       return;
@@ -47,7 +52,7 @@ bool Evaluator::readGroundtruth()
   std::string package_path = ros::package::getPath("roi_viewpoint_planner");
 
   std::stringstream resolution_sstr;
-  resolution_sstr << tree_resolution;
+  resolution_sstr << planner->getTreeResolution();
   std::string resolution_str = resolution_sstr.str();
 
   ROS_INFO_STREAM("Resolution string: " << resolution_str);
@@ -97,7 +102,7 @@ bool Evaluator::readGroundtruth()
   ROS_INFO_STREAM("BB ROI key count: " << gtRoiKeys.size());
 
   // Read GT octree
-  std::string gt_octree_file = package_path + "/cfg/world_gt_octrees/gt_tree_" + world_name + "_" + resolution_str + ".bt";
+  /*std::string gt_octree_file = package_path + "/cfg/world_gt_octrees/gt_tree_" + world_name + "_" + resolution_str + ".bt";
   octomap::OcTree gt_tree(gt_octree_file);
   gt_tree.expand(); // for key computations to work
 
@@ -108,10 +113,21 @@ bool Evaluator::readGroundtruth()
     gt_tree_keys.insert(it.getKey());
   }
 
-  ROS_INFO_STREAM("GT tree ROI key count: " << gt_tree_keys.size());
+  ROS_INFO_STREAM("GT tree ROI key count: " << gt_tree_keys.size());*/
 
-  auto isGtOcc = [](const octomap::OcTree &tree, const octomap::OcTreeNode *node) { return node->getLogOdds() > 0; };
-  gt_pcl = octomap_vpp::octomapToPcl<octomap::OcTree, pcl::PointXYZ>(gt_tree, isGtOcc);
+  gtLoader.reset(new GtOctreeLoader(world_name, planner->getTreeResolution()));
+
+  octomap_msgs::Octomap fruit_ot_msg;
+  fruit_ot_msg.header.frame_id = "world";
+  fruit_ot_msg.header.stamp = ros::Time::now();
+  bool msg_generated = octomap_msgs::fullMapToMsg(*(gtLoader->getIndexedFruitTree()), fruit_ot_msg);
+  if (msg_generated)
+  {
+    gt_fruit_pub.publish(fruit_ot_msg);
+  }
+
+  auto isGtOcc = [](const octomap_vpp::CountingOcTree &tree, const octomap_vpp::CountingOcTreeNode *node) { return true; };
+  gt_pcl = octomap_vpp::octomapToPcl<octomap_vpp::CountingOcTree, pcl::PointXYZ>(*(gtLoader->getIndexedFruitTree()), isGtOcc);
 
   computeGroundtruthPCL();
 

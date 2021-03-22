@@ -163,16 +163,19 @@ set(VIEWPOINT_PLANNER_SRC_FILES
   src/viewpoint_samplers.cpp
   src/viewpoint_utilities.cpp
   src/evaluator.cpp
+  src/gt_octree_loader.cpp
   src/planner_interfaces/direct_planner_interface.cpp
 )
 
 set (EVALUATOR_EXT_PLANNER_SRC_FILES
   src/evaluator.cpp
+  src/gt_octree_loader.cpp
   src/planner_interfaces/external_planner_interface.cpp
 )
 
 set (EVALUATOR_SAVED_TREE_SRC_FILES
   src/evaluator.cpp
+  src/gt_octree_loader.cpp
   src/planner_interfaces/saved_tree_interface.cpp
 )
 

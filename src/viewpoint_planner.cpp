@@ -7,6 +7,7 @@
 #include "octomap_vpp/marching_cubes.h"
 #include "octomap_vpp/octomap_transforms.h"
 #include "boost/date_time/posix_time/posix_time.hpp"
+#include "planner_interfaces/direct_planner_interface.h"
 
 namespace roi_viewpoint_planner
 {
@@ -205,9 +206,11 @@ ViewpointPlanner::~ViewpointPlanner()
   rename(bag_write_filename.c_str(), bag_final_filename.c_str());
 }
 
-bool ViewpointPlanner::initializeEvaluator()
+bool ViewpointPlanner::initializeEvaluator(ros::NodeHandle &nh, ros::NodeHandle &nhp)
 {
-    return false;
+  std::shared_ptr<DirectPlannerInterface> interface(new DirectPlannerInterface(this));
+  evaluator = new Evaluator(interface, nh, nhp, true);
+  return true;
 }
 
 /*void ViewpointPlanner::publishOctomapToPlanningScene(const octomap_msgs::Octomap &map_msg)

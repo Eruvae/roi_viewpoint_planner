@@ -12,8 +12,14 @@ int main(int argc, char **argv)
   ros::AsyncSpinner spinner(4);
   spinner.start();
 
-  std::shared_ptr<ExternalPlannerInterface> planner(new ExternalPlannerInterface(nh, roi_viewpoint_planner::Planner_MAP_ONLY, 0.01));
-  Evaluator evaluator(planner, nhp, false, "", 0.01);
+  double tree_resolution;
+  if (!nh.param<double>("/roi_viewpoint_planner/tree_resolution", tree_resolution, 0.01))
+  {
+    ROS_WARN("Planning tree resolution not found, using 0.01 as default");
+  }
+
+  std::shared_ptr<ExternalPlannerInterface> planner(new ExternalPlannerInterface(nh, roi_viewpoint_planner::Planner_MAP_ONLY, tree_resolution));
+  Evaluator evaluator(planner, nh, nhp, false);
 
   const std::string resultsFileName = "planner_results.csv";
   std::ofstream resultsFile(resultsFileName);

@@ -29,6 +29,7 @@ public:
   ExternalPlannerInterface(ros::NodeHandle &nh, int planning_mode, double tree_resolution);
 
   virtual std::shared_ptr<octomap_vpp::RoiOcTree> getPlanningTree();
+  virtual double getTreeResolution();
   virtual boost::mutex& getTreeMutex();
 
   bool activatePlanner();

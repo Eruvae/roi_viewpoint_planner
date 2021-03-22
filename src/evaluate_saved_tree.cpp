@@ -34,7 +34,7 @@ int main(int argc, char **argv)
     return -2;
   }
 
-  Evaluator evaluator(interface, nhp, world_name != "", world_name, tree_resolution);
+  Evaluator evaluator(interface, nh, nhp, world_name != "");
 
 
   const EvaluationParameters& params = evaluator.processDetectedRois();
