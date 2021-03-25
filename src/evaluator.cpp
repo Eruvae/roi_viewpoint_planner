@@ -12,6 +12,7 @@ Evaluator::Evaluator(std::shared_ptr<PlannerInterface> planner, ros::NodeHandle 
 {
   gt_pub = nhp.advertise<visualization_msgs::Marker>("roi_gt", 10, true);
   gt_fruit_pub = nhp.advertise<octomap_msgs::Octomap>("gt_fruits", 10, true);
+  gt_fruits_inflated_pub = nhp.advertise<octomap_msgs::Octomap>("gt_fruits_inflated", 10, true);
   if (gt_comparison)
   {
     if (!nh.param<std::string>("/world_name", world_name, ""))
@@ -120,14 +121,21 @@ bool Evaluator::readGroundtruth()
   octomap_msgs::Octomap fruit_ot_msg;
   fruit_ot_msg.header.frame_id = "world";
   fruit_ot_msg.header.stamp = ros::Time::now();
-  bool msg_generated = octomap_msgs::fullMapToMsg(*(gtLoader->getIndexedFruitTree()), fruit_ot_msg);
+  std::shared_ptr<const octomap_vpp::CountingOcTree> gt_fruits = gtLoader->getIndexedFruitTree();
+  bool msg_generated = octomap_msgs::fullMapToMsg(*gt_fruits, fruit_ot_msg);
   if (msg_generated)
   {
     gt_fruit_pub.publish(fruit_ot_msg);
   }
+  std::shared_ptr<octomap_vpp::NearestRegionOcTree> gt_fruits_inflated = octomap_vpp::NearestRegionOcTree::createFromCountringOctree(*gt_fruits, 0.2);
+  msg_generated = octomap_msgs::fullMapToMsg(*gt_fruits_inflated, fruit_ot_msg);
+  if (msg_generated)
+  {
+    gt_fruits_inflated_pub.publish(fruit_ot_msg);
+  }
 
   auto isGtOcc = [](const octomap_vpp::CountingOcTree &tree, const octomap_vpp::CountingOcTreeNode *node) { return true; };
-  gt_pcl = octomap_vpp::octomapToPcl<octomap_vpp::CountingOcTree, pcl::PointXYZ>(*(gtLoader->getIndexedFruitTree()), isGtOcc);
+  gt_pcl = octomap_vpp::octomapToPcl<octomap_vpp::CountingOcTree, pcl::PointXYZ>(*gt_fruits, isGtOcc);
 
   computeGroundtruthPCL();
 

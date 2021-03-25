@@ -9,6 +9,7 @@
 #include <octomap_msgs/conversions.h>
 #include <octomap/OcTree.h>
 #include <octomap_vpp/CountingOcTree.h>
+#include <octomap_vpp/NearestRegionOcTree.h>
 
 class GtOctreeLoader
 {
