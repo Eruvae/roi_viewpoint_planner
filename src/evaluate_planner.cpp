@@ -34,7 +34,9 @@ int main(int argc, char **argv)
   for (int i = 0; ros::ok() && i < 20; i++)
   {
     const std::string resultsFileName = "planner_results_" + std::to_string(i) + ".csv";
+    const std::string singleFruitResultsName = "results_single_fruits_" + std::to_string(i) + ".csv";
     std::ofstream resultsFile(resultsFileName);
+    std::ofstream singleFruitResultsFile(singleFruitResultsName);
     resultsFile << "Time (s),Detected ROI cluster,Total ROI cluster,ROI percentage,Average distance,Average volume accuracy,Covered ROI volume,False ROI volume,ROI key count,True ROI keys,False ROI keys" << std::endl;
 
     bool planner_active = false;
@@ -62,6 +64,16 @@ int main(int argc, char **argv)
                   << res.average_distance << "," << res.average_accuracy << "," << res.covered_roi_volume << "," << res.false_roi_volume << ","
                   << res.roi_key_count << "," << res.true_roi_key_count << "," << res.false_roi_key_count << std::endl;
 
+      singleFruitResultsFile << passed_time << ",";
+      for (size_t i = 0; i < res.fruit_cell_percentages.size(); i++)
+      {
+        singleFruitResultsFile << res.fruit_cell_percentages[i];
+        if (i < res.fruit_cell_percentages.size() - 1)
+          singleFruitResultsFile << ",";
+        else
+          singleFruitResultsFile << std::endl;
+      }
+
       if (passed_time > PLANNING_TIME) // PLANNING_TIME s timeout
       {
         for(ros::Rate rate(1); ros::ok() && planner_active; rate.sleep())
@@ -77,6 +89,7 @@ int main(int argc, char **argv)
     }
 
     resultsFile.close();
+    singleFruitResultsFile.close();
 
     bool octree_saved = false;
     for(ros::Rate rate(1); ros::ok() && !octree_saved; rate.sleep())

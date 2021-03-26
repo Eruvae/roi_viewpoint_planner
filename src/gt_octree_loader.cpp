@@ -67,6 +67,7 @@ GtOctreeLoader::GtOctreeLoader(const std::string &world_name, double resolution)
         indexed_fruit_tree->setNodeCount(resKey, fruit_index);
       }
       final_fruit_trees->push_back(fruit_tree);
+      fruit_cell_counts.push_back(fruit_keys.size());
       fruit_index++;
     }
   }

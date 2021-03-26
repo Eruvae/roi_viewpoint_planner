@@ -22,6 +22,7 @@ private:
 
   std::shared_ptr<std::vector<octomap::OcTree>> final_fruit_trees;
   std::shared_ptr<octomap_vpp::CountingOcTree> indexed_fruit_tree;
+  std::vector<size_t> fruit_cell_counts;
 
   static inline octomap::OcTreeKey addKeys(const octomap::OcTreeKey &k1, const octomap::OcTreeKey &k2, const octomap::OcTreeKey &zero_key)
   {
@@ -41,6 +42,27 @@ public:
   std::shared_ptr<const octomap_vpp::CountingOcTree> getIndexedFruitTree()
   {
     return std::const_pointer_cast<const octomap_vpp::CountingOcTree>(indexed_fruit_tree);
+  }
+
+  // return index of associated fruit, or 0 for no fruit
+  unsigned int getFruitIndex(const octomap::OcTreeKey &key)
+  {
+    octomap_vpp::CountingOcTreeNode *node = indexed_fruit_tree->search(key);
+    if (node)
+    {
+      return node->getCount();
+    }
+    return 0;
+  }
+
+  size_t getNumFruitCells(size_t ind)
+  {
+    return fruit_cell_counts[ind];
+  }
+
+  size_t getNumFruits()
+  {
+    return fruit_cell_counts.size();
   }
 };
 

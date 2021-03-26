@@ -81,6 +81,8 @@ struct EvaluationParameters
   size_t roi_key_count;
   size_t true_roi_key_count;
   size_t false_roi_key_count;
+  std::vector<double> fruit_cell_counts;
+  std::vector<double> fruit_cell_percentages;
 };
 
 class Evaluator

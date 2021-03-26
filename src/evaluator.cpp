@@ -127,7 +127,7 @@ bool Evaluator::readGroundtruth()
   {
     gt_fruit_pub.publish(fruit_ot_msg);
   }
-  std::shared_ptr<octomap_vpp::NearestRegionOcTree> gt_fruits_inflated = octomap_vpp::NearestRegionOcTree::createFromCountringOctree(*gt_fruits, 0.2);
+  std::shared_ptr<octomap_vpp::NearestRegionOcTree> gt_fruits_inflated = octomap_vpp::NearestRegionOcTree::createFromCountringOctree(*gt_fruits, 0);
   msg_generated = octomap_msgs::fullMapToMsg(*gt_fruits_inflated, fruit_ot_msg);
   if (msg_generated)
   {
@@ -539,6 +539,10 @@ const EvaluationParameters& Evaluator::processDetectedRois()
   octomap::KeySet true_roi_keys, false_roi_keys;
   if (gt_comparison)
   {
+    results.fruit_cell_counts.clear();
+    results.fruit_cell_counts.resize(gtLoader->getNumFruits(), 0);
+    results.fruit_cell_percentages.clear();
+    results.fruit_cell_percentages.resize(gtLoader->getNumFruits(), 0);
     for (const octomap::OcTreeKey &key : roi_keys)
     {
       if (gtRoiKeys.find(key) != gtRoiKeys.end())
@@ -549,6 +553,15 @@ const EvaluationParameters& Evaluator::processDetectedRois()
       {
         false_roi_keys.insert(key);
       }
+
+      // new per-fruit comparison
+      unsigned int ind = gtLoader->getFruitIndex(key);
+      if (ind != 0)
+        results.fruit_cell_counts[ind - 1]++;
+    }
+    for (size_t i = 0; i < gtLoader->getNumFruits(); i++)
+    {
+      results.fruit_cell_percentages[i] = (double)results.fruit_cell_counts[i] / (double)gtLoader->getNumFruitCells(i);
     }
   }
 
