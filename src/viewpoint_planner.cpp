@@ -14,6 +14,7 @@ namespace roi_viewpoint_planner
 
 ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, const std::string &wstree_file, const std::string &sampling_tree_file, double tree_resolution,
                                    const std::string &map_frame, const std::string &ws_frame) :
+  nh(nh), nhp(nhp),
   planningTree(new octomap_vpp::RoiOcTree(tree_resolution)),
   map_frame(map_frame),
   ws_frame(ws_frame),
@@ -198,6 +199,8 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, co
 
     cubeVisPub.publish(ws_cube);
   }
+
+  initializeEvaluator(nh, nhp);
 }
 
 ViewpointPlanner::~ViewpointPlanner()
@@ -210,7 +213,89 @@ bool ViewpointPlanner::initializeEvaluator(ros::NodeHandle &nh, ros::NodeHandle 
 {
   std::shared_ptr<DirectPlannerInterface> interface(new DirectPlannerInterface(this));
   evaluator = new Evaluator(interface, nh, nhp, true);
+  eval_trial_num = 0;
   return true;
+}
+
+bool ViewpointPlanner::startEvaluator(size_t numEvals)
+{
+  if (eval_running)
+    return false;
+
+  eval_trial_num = 0;
+  eval_resultsFile = std::ofstream("planner_results_" + std::to_string(eval_trial_num) + ".csv");
+  eval_singleFruitResultsFile = std::ofstream("results_single_fruits_" + std::to_string(eval_trial_num) + ".csv");
+  eval_resultsFile << "Time (s),Detected ROI cluster,Total ROI cluster,ROI percentage,Average distance,Average volume accuracy,Covered ROI volume,False ROI volume,ROI key count,True ROI keys,False ROI keys,Last Step" << std::endl;
+  eval_total_trials = numEvals;
+  eval_plannerStartTime = ros::Time::now();
+  eval_running = true;
+  mode = SAMPLE_AUTOMATIC;
+  execute_plan = true;
+  require_execution_confirmation = false;
+  return true;
+}
+
+bool ViewpointPlanner::saveEvaluatorData()
+{
+  ros::Time currentTime = ros::Time::now();
+
+  const EvaluationParameters &res = evaluator->processDetectedRois();
+
+  double passed_time = (currentTime - eval_plannerStartTime).toSec();
+
+  eval_resultsFile << passed_time << "," << res.detected_roi_clusters << "," << res.total_roi_clusters << "," << res.roi_percentage<< ","
+              << res.average_distance << "," << res.average_accuracy << "," << res.covered_roi_volume << "," << res.false_roi_volume << ","
+              << res.roi_key_count << "," << res.true_roi_key_count << "," << res.false_roi_key_count << "," << eval_lastStep << std::endl;
+
+  eval_singleFruitResultsFile << passed_time << ",";
+  for (size_t i = 0; i < res.fruit_cell_percentages.size(); i++)
+  {
+    eval_singleFruitResultsFile << res.fruit_cell_percentages[i];
+    if (i < res.fruit_cell_percentages.size() - 1)
+      eval_singleFruitResultsFile << ",";
+    else
+      eval_singleFruitResultsFile << std::endl;
+  }
+
+  if (passed_time > 180.0)
+    resetEvaluator();
+
+  return true;
+}
+
+bool ViewpointPlanner::resetEvaluator()
+{
+  eval_resultsFile.close();
+  eval_singleFruitResultsFile.close();
+  eval_trial_num++;
+
+  mode = IDLE;
+  resetOctomap();
+
+  bool success = false;
+  std::vector<double> joint_start_values;
+  if(nhp.getParam("initial_joint_values", joint_start_values))
+  {
+    success = moveToState(joint_start_values);
+  }
+  else
+  {
+    ROS_WARN("No inital joint values set");
+  }
+
+  if (eval_trial_num < eval_total_trials)
+  {
+    eval_resultsFile = std::ofstream("planner_results_" + std::to_string(eval_trial_num) + ".csv");
+    eval_singleFruitResultsFile = std::ofstream("results_single_fruits_" + std::to_string(eval_trial_num) + ".csv");
+    eval_resultsFile << "Time (s),Detected ROI cluster,Total ROI cluster,ROI percentage,Average distance,Average volume accuracy,Covered ROI volume,False ROI volume,ROI key count,True ROI keys,False ROI keys,Last Step" << std::endl;
+    eval_plannerStartTime = ros::Time::now();
+    mode = SAMPLE_AUTOMATIC;
+  }
+  else
+  {
+    eval_running = false;
+  }
+  return success;
 }
 
 /*void ViewpointPlanner::publishOctomapToPlanningScene(const octomap_msgs::Octomap &map_msg)
@@ -2092,6 +2177,9 @@ void ViewpointPlanner::plannerLoop()
 
     publishMap();
 
+    if (eval_running)
+      saveEvaluatorData();
+
     if (mode == MAP_ONLY)
       continue;
 
@@ -2157,6 +2245,7 @@ void ViewpointPlanner::plannerLoop()
             if (execute_plan && moveToPose(transformToWorkspace(commandPose)))
             {
               ROS_INFO_STREAM("Succesfully moving with move to see");
+              eval_lastStep = "M2S";
               m2s_success = true;
               m2s_current_steps++;
             }
@@ -2263,11 +2352,13 @@ void ViewpointPlanner::plannerLoop()
       if (roiSamplingVps.size() > 0 && roiSamplingVps.front().utility > 0.2)
       {
         ROS_INFO_STREAM("Using ROI viewpoint targeting");
+        eval_lastStep = "ROI sampling";
         return roiSamplingVps;
       }
       else// if (!contourVps.empty())
       {
         ROS_INFO_STREAM("Using exploration viewpoints");
+        eval_lastStep = "Expl sampling";
         return explSamplingVps;
       }
       /*else

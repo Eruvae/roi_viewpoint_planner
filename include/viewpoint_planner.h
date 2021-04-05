@@ -101,6 +101,8 @@ class ViewpointPlanner
   friend class DirectPlannerInterface;
 
 private:
+  ros::NodeHandle &nh;
+  ros::NodeHandle &nhp;
   std::shared_ptr<octomap_vpp::RoiOcTree> planningTree;
   octomap_vpp::WorkspaceOcTree *workspaceTree;
   octomap_vpp::WorkspaceOcTree *samplingTree;
@@ -166,6 +168,15 @@ private:
   #endif
 
   std::default_random_engine random_engine;
+
+  // Evaluator variables
+  bool eval_running = false;
+  size_t eval_total_trials;
+  size_t eval_trial_num;
+  std::ofstream eval_resultsFile;
+  std::ofstream eval_singleFruitResultsFile;
+  ros::Time eval_plannerStartTime;
+  std::string eval_lastStep;
 
 public:
 
@@ -239,6 +250,9 @@ public:
   ~ViewpointPlanner();
 
   bool initializeEvaluator(ros::NodeHandle &nh, ros::NodeHandle &nhp);
+  bool startEvaluator(size_t numEvals);
+  bool saveEvaluatorData();
+  bool resetEvaluator();
 
   // Set planner parameters
 

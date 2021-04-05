@@ -5,6 +5,7 @@
 #include "roi_viewpoint_planner_msgs/SaveOctomap.h"
 #include "roi_viewpoint_planner_msgs/MoveToState.h"
 #include "roi_viewpoint_planner_msgs/LoadOctomap.h"
+#include "roi_viewpoint_planner_msgs/StartEvaluator.h"
 #include <std_srvs/Trigger.h>
 #include <std_srvs/Empty.h>
 #include <boost/algorithm/string/predicate.hpp>
@@ -22,6 +23,12 @@ ViewpointPlanner *planner;
 dynamic_reconfigure::Server<roi_viewpoint_planner::PlannerConfig> *config_server;
 boost::recursive_mutex config_mutex;
 roi_viewpoint_planner::PlannerConfig current_config;
+
+bool startEvaluator(roi_viewpoint_planner_msgs::StartEvaluator::Request &req, roi_viewpoint_planner_msgs::StartEvaluator::Response &res)
+{
+  res.success = planner->startEvaluator(req.numEvals);
+  return true;
+}
 
 bool saveTreeAsObj(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res)
 {
@@ -222,6 +229,7 @@ int main(int argc, char **argv)
   ros::ServiceServer moveToStateService = nhp.advertiseService("move_to_state", moveToState);
   ros::ServiceServer resetOctomapService = nhp.advertiseService("reset_octomap", resetOctomap);
   ros::ServiceServer resetPlannerService = nhp.advertiseService("reset_planner", resetPlanner);
+  ros::ServiceServer startEvaluatorService = nhp.advertiseService("start_evaluator", startEvaluator);
 
   config_server = new dynamic_reconfigure::Server<roi_viewpoint_planner::PlannerConfig>(config_mutex, nhp);
   config_server->setCallback(reconfigureCallback);
