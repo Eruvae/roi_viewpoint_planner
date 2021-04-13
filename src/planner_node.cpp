@@ -26,7 +26,7 @@ roi_viewpoint_planner::PlannerConfig current_config;
 
 bool startEvaluator(roi_viewpoint_planner_msgs::StartEvaluator::Request &req, roi_viewpoint_planner_msgs::StartEvaluator::Response &res)
 {
-  res.success = planner->startEvaluator(req.numEvals);
+  res.success = planner->startEvaluator(req.numEvals, req.episodeDuration);
   return true;
 }
 
@@ -131,29 +131,17 @@ void reconfigureCallback(roi_viewpoint_planner::PlannerConfig &config, uint32_t 
       config.sensor_min_range = planner->sensor_min_range;
     }
   }
-  if (level & (1 << 5)) // insert_occ_if_not_moved
+  if (level & (1 << 5)) // insert_scan_if_not_moved
   {
-    planner->insert_occ_if_not_moved = config.insert_occ_if_not_moved;
+    planner->insert_scan_if_not_moved = config.insert_scan_if_not_moved;
   }
-  if (level & (1 << 6)) // insert_roi_if_not_moved
+  if (level & (1 << 7)) // insert_scan_while_moving
   {
-    planner->insert_roi_if_not_moved = config.insert_roi_if_not_moved;
+    planner->insert_scan_while_moving = config.insert_scan_while_moving;
   }
-  if (level & (1 << 7)) // insert_occ_while_moving
+  if (level & (1 << 9)) // wait_for_scan
   {
-    planner->insert_occ_while_moving = config.insert_occ_while_moving;
-  }
-  if (level & (1 << 8)) // insert_roi_while_moving
-  {
-    planner->insert_roi_while_moving = config.insert_roi_while_moving;
-  }
-  if (level & (1 << 9)) // wait_for_occ_scan
-  {
-    planner->wait_for_occ_scan = config.wait_for_occ_scan;
-  }
-  if (level & (1 << 10)) // wait_for_roi_scan
-  {
-    planner->wait_for_roi_scan = config.wait_for_occ_scan;
+    planner->wait_for_scan = config.wait_for_scan;
   }
   if (level & (1 << 11)) // publish_planning_state
   {
@@ -237,7 +225,7 @@ int main(int argc, char **argv)
   std::vector<double> joint_start_values;
   if(nhp.getParam("initial_joint_values", joint_start_values))
   {
-    planner->moveToState(joint_start_values);
+    planner->moveToState(joint_start_values, false, false);
   }
   else
   {

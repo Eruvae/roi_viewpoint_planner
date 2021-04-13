@@ -8,6 +8,7 @@
 #include "octomap_vpp/octomap_transforms.h"
 #include "boost/date_time/posix_time/posix_time.hpp"
 #include "planner_interfaces/direct_planner_interface.h"
+#include "rvp_utils.h"
 
 namespace roi_viewpoint_planner
 {
@@ -38,8 +39,7 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, co
   loop_state(NORMAL),
   execute_plan(false),
   robotIsMoving(false),
-  occupancyScanned(false),
-  roiScanned(false),
+  scanInserted(false),
   m2s_current_steps(0)
 {
 
@@ -200,7 +200,8 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, co
     cubeVisPub.publish(ws_cube);
   }
 
-  initializeEvaluator(nh, nhp);
+  ros::NodeHandle nh_eval("evaluator");
+  initializeEvaluator(nh, nh_eval);
 }
 
 ViewpointPlanner::~ViewpointPlanner()
@@ -217,7 +218,7 @@ bool ViewpointPlanner::initializeEvaluator(ros::NodeHandle &nh, ros::NodeHandle 
   return true;
 }
 
-bool ViewpointPlanner::startEvaluator(size_t numEvals)
+bool ViewpointPlanner::startEvaluator(size_t numEvals, double episodeDuration)
 {
   if (eval_running)
     return false;
@@ -227,6 +228,7 @@ bool ViewpointPlanner::startEvaluator(size_t numEvals)
   eval_singleFruitResultsFile = std::ofstream("results_single_fruits_" + std::to_string(eval_trial_num) + ".csv");
   eval_resultsFile << "Time (s),Detected ROI cluster,Total ROI cluster,ROI percentage,Average distance,Average volume accuracy,Covered ROI volume,False ROI volume,ROI key count,True ROI keys,False ROI keys,Last Step" << std::endl;
   eval_total_trials = numEvals;
+  eval_episode_duration = episodeDuration;
   eval_plannerStartTime = ros::Time::now();
   eval_running = true;
   mode = SAMPLE_AUTOMATIC;
@@ -257,7 +259,7 @@ bool ViewpointPlanner::saveEvaluatorData()
       eval_singleFruitResultsFile << std::endl;
   }
 
-  if (passed_time > 180.0)
+  if (passed_time > eval_episode_duration)
     resetEvaluator();
 
   return true;
@@ -276,7 +278,7 @@ bool ViewpointPlanner::resetEvaluator()
   std::vector<double> joint_start_values;
   if(nhp.getParam("initial_joint_values", joint_start_values))
   {
-    success = moveToState(joint_start_values);
+    success = moveToState(joint_start_values, false, false);
   }
   else
   {
@@ -348,7 +350,7 @@ void ViewpointPlanner::publishMap()
 
 void ViewpointPlanner::registerPointcloudWithRoi(const ros::MessageEvent<pointcloud_roi_msgs::PointcloudWithRoi const> &event)
 {
-  if (mode == IDLE || (!insert_roi_while_moving && robotIsMoving.load()))
+  if (mode == IDLE || (!insert_scan_while_moving && robotIsMoving.load()))
   {
     //ROS_INFO_STREAM("Robot is currently moving, not inserting ROI");
     return;
@@ -381,13 +383,14 @@ void ViewpointPlanner::registerPointcloudWithRoi(const ros::MessageEvent<pointcl
     }
   }
 
-  if (!insert_roi_if_not_moved) // check if robot has moved since last update
+  if (!insert_scan_if_not_moved) // check if robot has moved since last update
   {
     Eigen::Affine3d camPoseEigen = tf2::transformToEigen(pcFrameTf.transform);
     static Eigen::Affine3d lastCamPose;
     if (camPoseEigen.isApprox(lastCamPose, 1e-2))
     {
         ROS_INFO("Arm has not moved, not inserting ROI");
+        scanInserted.store(true); // to prevent getting stuck
         return;
     }
     lastCamPose = camPoseEigen;
@@ -410,10 +413,10 @@ void ViewpointPlanner::registerPointcloudWithRoi(const ros::MessageEvent<pointcl
   planningTree->insertRegionScan(inlierCloud, outlierCloud);
   tree_mtx.unlock();
 
-  roiScanned.store(true);
+  scanInserted.store(true);
   if (publish_planning_state)
   {
-    state.roi_scanned = true;
+    state.scan_inserted = true;
     plannerStatePub.publish(state);
   }
 
@@ -1776,7 +1779,7 @@ robot_state::RobotStatePtr ViewpointPlanner::sampleNextRobotState(const robot_st
   return maxState;
 }
 
-bool ViewpointPlanner::moveToPoseCartesian(const geometry_msgs::Pose &goal_pose)
+bool ViewpointPlanner::moveToPoseCartesian(const geometry_msgs::Pose &goal_pose, bool async, bool safe)
 {
   std::vector<geometry_msgs::Pose> waypoints;
   waypoints.push_back(goal_pose);
@@ -1786,41 +1789,17 @@ bool ViewpointPlanner::moveToPoseCartesian(const geometry_msgs::Pose &goal_pose)
   double fraction = manipulator_group.computeCartesianPath(waypoints, eef_step, jump_threshold, trajectory);
   if (fraction > 0.95) // execute plan if at least 95% of goal reached
   {
-    if (require_execution_confirmation)
-    {
-      std_srvs::Trigger requestExecution;
-      if (!requestExecutionConfirmation.call(requestExecution) || !requestExecution.response.success)
-      {
-        ROS_INFO_STREAM("Plan execution denied");
-        return false;
-      }
-    }
     moveit::planning_interface::MoveGroupInterface::Plan plan;
     plan.trajectory_= trajectory;
-    robotIsMoving.store(true);
-    occupancyScanned.store(false);
-    roiScanned.store(false);
-    if (publish_planning_state)
-    {
-      state.robot_is_moving = true;
-      state.occupancy_scanned = false;
-      state.roi_scanned = false;
-      plannerStatePub.publish(state);
-    }
-
-    manipulator_group.execute(plan);
-    robotIsMoving.store(false);
-    if (publish_planning_state)
-    {
-      state.robot_is_moving = false;
-      plannerStatePub.publish(state);
-    }
-
+    if (safe)
+      return safeExecutePlan(plan, async);
+    else
+      return executePlan(plan, async);
   }
-  return true;
+  return false;
 }
 
-bool ViewpointPlanner::moveToPose(const geometry_msgs::Pose &goal_pose)
+bool ViewpointPlanner::moveToPose(const geometry_msgs::Pose &goal_pose, bool async, bool safe)
 {
   ros::Time setTargetTime = ros::Time::now();
   if (!manipulator_group.setJointValueTarget(goal_pose, "camera_link"))
@@ -1830,132 +1809,95 @@ bool ViewpointPlanner::moveToPose(const geometry_msgs::Pose &goal_pose)
   }
   ROS_INFO_STREAM("IK solve time: " << (ros::Time::now() - setTargetTime));
 
-  moveit::planning_interface::MoveGroupInterface::Plan plan;
-  ros::Time planStartTime = ros::Time::now();
-  bool success = (manipulator_group.plan(plan) == moveit::planning_interface::MoveItErrorCode::SUCCESS);
-  ROS_INFO_STREAM("Planning duration: " << (ros::Time::now() - planStartTime));
-
-  if (success)
-  {
-    //manipulator_group.asyncExecute(plan);
-    if (require_execution_confirmation)
-    {
-      std_srvs::Trigger requestExecution;
-      if (!requestExecutionConfirmation.call(requestExecution) || !requestExecution.response.success)
-      {
-        ROS_INFO_STREAM("Plan execution denied");
-        return false;
-      }
-    }
-    robotIsMoving.store(true);
-    occupancyScanned.store(false);
-    roiScanned.store(false);
-    if (publish_planning_state)
-    {
-      state.robot_is_moving = true;
-      state.occupancy_scanned = false;
-      state.roi_scanned = false;
-      plannerStatePub.publish(state);
-    }
-    manipulator_group.execute(plan);
-    robotIsMoving.store(false);
-    if (publish_planning_state)
-    {
-      state.robot_is_moving = false;
-      plannerStatePub.publish(state);
-    }
-  }
-  else
-  {
-    ROS_INFO("Could not find plan");
-  }
-  return success;
+  return planAndExecuteFromMoveGroup(async, safe);
 }
 
-bool ViewpointPlanner::moveToState(const robot_state::RobotState &goal_state)
+bool ViewpointPlanner::moveToState(const robot_state::RobotState &goal_state, bool async, bool safe)
 {
   manipulator_group.setJointValueTarget(goal_state);
 
-  moveit::planning_interface::MoveGroupInterface::Plan plan;
-  bool success = (manipulator_group.plan(plan) == moveit::planning_interface::MoveItErrorCode::SUCCESS);
-
-  if (success)
-  {
-    if (require_execution_confirmation)
-    {
-      std_srvs::Trigger requestExecution;
-      if (!requestExecutionConfirmation.call(requestExecution) || !requestExecution.response.success)
-      {
-        ROS_INFO_STREAM("Plan execution denied");
-        return false;
-      }
-    }
-    robotIsMoving.store(true);
-    occupancyScanned.store(false);
-    roiScanned.store(false);
-    if (publish_planning_state)
-    {
-      state.robot_is_moving = true;
-      state.occupancy_scanned = false;
-      state.roi_scanned = false;
-      plannerStatePub.publish(state);
-    }
-    manipulator_group.execute(plan);
-    robotIsMoving.store(false);
-    if (publish_planning_state)
-    {
-      state.robot_is_moving = false;
-      plannerStatePub.publish(state);
-    }
-  }
-  else
-  {
-    ROS_INFO("Can't execute plan");
-  }
-  return success;
+  return planAndExecuteFromMoveGroup(async, safe);
 }
 
-bool ViewpointPlanner::moveToStateAsync(const robot_state::RobotState &goal_state)
-{
-  manipulator_group.setJointValueTarget(goal_state);
-
-  moveit::planning_interface::MoveGroupInterface::Plan plan;
-  bool success = (manipulator_group.plan(plan) == moveit::planning_interface::MoveItErrorCode::SUCCESS);
-
-  if (success)
-  {
-    manipulator_group.asyncExecute(plan);
-  }
-  else
-  {
-    ROS_INFO("Can't execute plan");
-  }
-  return success;
-}
-
-bool ViewpointPlanner::moveToState(const std::vector<double> &joint_values, bool async)
+bool ViewpointPlanner::moveToState(const std::vector<double> &joint_values, bool async, bool safe)
 {
   kinematic_state->setJointGroupPositions(joint_model_group, joint_values);
   manipulator_group.setJointValueTarget(*kinematic_state);
 
-  //manipulator_group.setPathConstraints();
-  //manipulator_group.setTrajectoryConstraints();
+  planAndExecuteFromMoveGroup(async, safe);
+}
 
+bool ViewpointPlanner::planAndExecuteFromMoveGroup(bool async, bool safe)
+{
   moveit::planning_interface::MoveGroupInterface::Plan plan;
-  bool success = (manipulator_group.plan(plan) == moveit::planning_interface::MoveItErrorCode::SUCCESS);
-
-  if (success)
+  ros::Time planStartTime = ros::Time::now();
+  moveit::planning_interface::MoveItErrorCode res = manipulator_group.plan(plan);
+  ROS_INFO_STREAM("Planning duration: " << (ros::Time::now() - planStartTime));
+  if (res != moveit::planning_interface::MoveItErrorCode::SUCCESS)
   {
-    if (async)
-      manipulator_group.asyncExecute(plan);
-    else
-      manipulator_group.execute(plan);
+    ROS_INFO("Could not find plan");
+    return false;
   }
+  if (safe)
+    return safeExecutePlan(plan, async);
   else
+    return executePlan(plan, async);
+}
+
+bool ViewpointPlanner::safeExecutePlan(const moveit::planning_interface::MoveGroupInterface::Plan &plan, bool async)
+{
+  if (require_execution_confirmation)
   {
-    ROS_INFO("Can't execute plan");
+    std_srvs::Trigger requestExecution;
+    if (!requestExecutionConfirmation.call(requestExecution) || !requestExecution.response.success)
+    {
+      ROS_INFO_STREAM("Plan execution denied");
+      return false;
+    }
   }
-  return success;
+
+  robotIsMoving.store(true);
+  scanInserted.store(false);
+  if (publish_planning_state)
+  {
+    state.robot_is_moving = true;
+    state.scan_inserted = false;
+    plannerStatePub.publish(state);
+  }
+
+  bool res = executePlan(plan, async);
+
+  robotIsMoving.store(false);
+  if (publish_planning_state)
+  {
+    state.robot_is_moving = false;
+    plannerStatePub.publish(state);
+  }
+
+  if (!res)
+  {
+    ROS_INFO("Could not execute plan");
+    return false;
+  }
+
+  if (eval_running)
+  {
+    for (ros::Rate r(100); !scanInserted; r.sleep()); // wait for scan
+    saveEvaluatorData();
+  }
+
+  return true;
+}
+
+bool ViewpointPlanner::executePlan(const moveit::planning_interface::MoveGroupInterface::Plan &plan, bool async)
+{
+  moveit::planning_interface::MoveItErrorCode res;
+  if (async)
+    res = manipulator_group.asyncExecute(plan);
+  else
+    res = manipulator_group.execute(plan);
+
+  return (res == moveit::planning_interface::MoveItErrorCode::SUCCESS);
 }
 
 bool ViewpointPlanner::saveTreeAsObj(const std::string &file_name)
@@ -2046,13 +1988,10 @@ void ViewpointPlanner::plannerLoop()
     auto quaternion = Eigen::Quaterniond(stateTf.linear()).coeffs();
     octomap::pose6d viewpoint(octomap::point3d(translation[0], translation[1], translation[2]), octomath::Quaternion(quaternion[0], quaternion[1], quaternion[2], quaternion[3]));*/
 
-    if (mode == IDLE || (wait_for_occ_scan && !occupancyScanned.load()) || (wait_for_roi_scan && !roiScanned.load()))
+    if (mode == IDLE || (wait_for_scan && !scanInserted.load()))
       continue;
 
     publishMap();
-
-    if (eval_running)
-      saveEvaluatorData();
 
     if (mode == MAP_ONLY)
       continue;
@@ -2116,10 +2055,10 @@ void ViewpointPlanner::plannerLoop()
             commandPose.position.z = camFrameTf.transform.translation.z + resp.gradient.position.z;
             commandPose.orientation = tf2::toMsg(q_new);
 
+            eval_lastStep = "M2S";
             if (execute_plan && moveToPose(transformToWorkspace(commandPose)))
             {
               ROS_INFO_STREAM("Succesfully moving with move to see");
-              eval_lastStep = "M2S";
               m2s_success = true;
               m2s_current_steps++;
             }

@@ -153,8 +153,7 @@ private:
   robot_state::RobotStatePtr kinematic_state;
 
   std::atomic_bool robotIsMoving;
-  std::atomic_bool occupancyScanned;
-  std::atomic_bool roiScanned;
+  std::atomic_bool scanInserted;
 
   roi_viewpoint_planner_msgs::PlannerState state;
 
@@ -172,6 +171,7 @@ private:
   // Evaluator variables
   bool eval_running = false;
   size_t eval_total_trials;
+  double eval_episode_duration;
   size_t eval_trial_num;
   std::ofstream eval_resultsFile;
   std::ofstream eval_singleFruitResultsFile;
@@ -219,9 +219,9 @@ public:
   //double sensor_hfov;
   //double sensor_vfov;
 
-  bool insert_occ_if_not_moved, insert_roi_if_not_moved;
-  bool insert_occ_while_moving, insert_roi_while_moving;
-  bool wait_for_occ_scan, wait_for_roi_scan;
+  bool insert_scan_if_not_moved;
+  bool insert_scan_while_moving;
+  bool wait_for_scan;
   bool publish_planning_state;
 
   std::string planner_id;
@@ -250,7 +250,7 @@ public:
   ~ViewpointPlanner();
 
   bool initializeEvaluator(ros::NodeHandle &nh, ros::NodeHandle &nhp);
-  bool startEvaluator(size_t numEvals);
+  bool startEvaluator(size_t numEvals, double episodeDuration);
   bool saveEvaluatorData();
   bool resetEvaluator();
 
@@ -351,15 +351,19 @@ public:
 
   robot_state::RobotStatePtr sampleNextRobotState(const robot_state::JointModelGroup *joint_model_group, const robot_state::RobotState &current_state);
 
-  bool moveToPoseCartesian(const geometry_msgs::Pose &goal_pose);
+  bool moveToPoseCartesian(const geometry_msgs::Pose &goal_pose, bool async=false, bool safe=true);
 
-  bool moveToPose(const geometry_msgs::Pose &goal_pose);
+  bool moveToPose(const geometry_msgs::Pose &goal_pose, bool async=false, bool safe=true);
 
-  bool moveToState(const robot_state::RobotState &goal_state);
+  bool moveToState(const robot_state::RobotState &goal_state, bool async=false, bool safe=true);
 
-  bool moveToStateAsync(const robot_state::RobotState &goal_state);
+  bool moveToState(const std::vector<double> &joint_values, bool async=false, bool safe=true);
 
-  bool moveToState(const std::vector<double> &joint_values, bool async = false);
+  bool planAndExecuteFromMoveGroup(bool async, bool safe);
+
+  bool safeExecutePlan(const moveit::planning_interface::MoveGroupInterface::Plan &plan, bool async);
+
+  bool executePlan(const moveit::planning_interface::MoveGroupInterface::Plan &plan, bool async);
 
   bool saveTreeAsObj(const std::string &file_name);
 
