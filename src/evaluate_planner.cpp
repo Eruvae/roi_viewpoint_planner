@@ -37,7 +37,7 @@ int main(int argc, char **argv)
     const std::string singleFruitResultsName = "results_single_fruits_" + std::to_string(i) + ".csv";
     std::ofstream resultsFile(resultsFileName);
     std::ofstream singleFruitResultsFile(singleFruitResultsName);
-    resultsFile << "Time (s),Detected ROI cluster,Total ROI cluster,ROI percentage,Average distance,Average volume accuracy,Covered ROI volume,False ROI volume,ROI key count,True ROI keys,False ROI keys" << std::endl;
+    evaluator.writeHeader(resultsFile);
 
     bool planner_active = false;
     for(ros::Rate rate(1); ros::ok() && !planner_active; rate.sleep())
@@ -56,13 +56,11 @@ int main(int argc, char **argv)
     {
       ros::Time currentTime = ros::Time::now();
 
-      const EvaluationParameters &res = evaluator.processDetectedRois();
+      EvaluationParameters res = evaluator.processDetectedRois();
 
       double passed_time = (currentTime - plannerStartTime).toSec();
 
-      resultsFile << passed_time << "," << res.detected_roi_clusters << "," << res.total_roi_clusters << "," << res.roi_percentage<< ","
-                  << res.average_distance << "," << res.average_accuracy << "," << res.covered_roi_volume << "," << res.false_roi_volume << ","
-                  << res.roi_key_count << "," << res.true_roi_key_count << "," << res.false_roi_key_count << std::endl;
+      evaluator.writeParams(resultsFile, passed_time, res);
 
       singleFruitResultsFile << passed_time << ",";
       for (size_t i = 0; i < res.fruit_cell_percentages.size(); i++)

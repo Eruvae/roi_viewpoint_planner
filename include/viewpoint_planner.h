@@ -174,7 +174,9 @@ private:
   double eval_episode_duration;
   size_t eval_trial_num;
   std::ofstream eval_resultsFile;
-  std::ofstream eval_singleFruitResultsFile;
+  std::ofstream eval_fruitCellPercFile;
+  std::ofstream eval_volumeAccuracyFile;
+  std::ofstream eval_distanceFile;
   ros::Time eval_plannerStartTime;
   std::string eval_lastStep;
 

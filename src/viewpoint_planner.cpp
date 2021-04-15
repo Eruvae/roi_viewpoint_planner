@@ -225,8 +225,10 @@ bool ViewpointPlanner::startEvaluator(size_t numEvals, double episodeDuration)
 
   eval_trial_num = 0;
   eval_resultsFile = std::ofstream("planner_results_" + std::to_string(eval_trial_num) + ".csv");
-  eval_singleFruitResultsFile = std::ofstream("results_single_fruits_" + std::to_string(eval_trial_num) + ".csv");
-  eval_resultsFile << "Time (s),Detected ROI cluster,Total ROI cluster,ROI percentage,Average distance,Average volume accuracy,Covered ROI volume,False ROI volume,ROI key count,True ROI keys,False ROI keys,Last Step" << std::endl;
+  eval_fruitCellPercFile = std::ofstream("results_fruit_cells_" + std::to_string(eval_trial_num) + ".csv");
+  eval_volumeAccuracyFile = std::ofstream("results_volume_accuracy_" + std::to_string(eval_trial_num) + ".csv");
+  eval_distanceFile = std::ofstream("results_distances_" + std::to_string(eval_trial_num) + ".csv");
+  evaluator->writeHeader(eval_resultsFile);
   eval_total_trials = numEvals;
   eval_episode_duration = episodeDuration;
   eval_plannerStartTime = ros::Time::now();
@@ -237,27 +239,33 @@ bool ViewpointPlanner::startEvaluator(size_t numEvals, double episodeDuration)
   return true;
 }
 
+template<typename T>
+void writeVector(std::ostream &os, double passed_time, const std::vector<T> &vec)
+{
+  os << passed_time << ",";
+  for (size_t i = 0; i < vec.size(); i++)
+  {
+    os << vec[i];
+    if (i < vec.size() - 1)
+      os << ",";
+    else
+      os << std::endl;
+  }
+}
+
 bool ViewpointPlanner::saveEvaluatorData()
 {
   ros::Time currentTime = ros::Time::now();
 
-  const EvaluationParameters &res = evaluator->processDetectedRois();
+  EvaluationParameters res = evaluator->processDetectedRois();
 
   double passed_time = (currentTime - eval_plannerStartTime).toSec();
 
-  eval_resultsFile << passed_time << "," << res.detected_roi_clusters << "," << res.total_roi_clusters << "," << res.roi_percentage<< ","
-              << res.average_distance << "," << res.average_accuracy << "," << res.covered_roi_volume << "," << res.false_roi_volume << ","
-              << res.roi_key_count << "," << res.true_roi_key_count << "," << res.false_roi_key_count << "," << eval_lastStep << std::endl;
+  evaluator->writeParams(eval_resultsFile, passed_time, res);
 
-  eval_singleFruitResultsFile << passed_time << ",";
-  for (size_t i = 0; i < res.fruit_cell_percentages.size(); i++)
-  {
-    eval_singleFruitResultsFile << res.fruit_cell_percentages[i];
-    if (i < res.fruit_cell_percentages.size() - 1)
-      eval_singleFruitResultsFile << ",";
-    else
-      eval_singleFruitResultsFile << std::endl;
-  }
+  writeVector(eval_fruitCellPercFile, passed_time, res.fruit_cell_percentages);
+  writeVector(eval_volumeAccuracyFile, passed_time, res.volume_accuracies);
+  writeVector(eval_distanceFile, passed_time, res.distances);
 
   if (passed_time > eval_episode_duration)
     resetEvaluator();
@@ -268,7 +276,9 @@ bool ViewpointPlanner::saveEvaluatorData()
 bool ViewpointPlanner::resetEvaluator()
 {
   eval_resultsFile.close();
-  eval_singleFruitResultsFile.close();
+  eval_fruitCellPercFile.close();
+  eval_volumeAccuracyFile.close();
+  eval_distanceFile.close();
   eval_trial_num++;
 
   mode = IDLE;
@@ -288,8 +298,10 @@ bool ViewpointPlanner::resetEvaluator()
   if (eval_trial_num < eval_total_trials)
   {
     eval_resultsFile = std::ofstream("planner_results_" + std::to_string(eval_trial_num) + ".csv");
-    eval_singleFruitResultsFile = std::ofstream("results_single_fruits_" + std::to_string(eval_trial_num) + ".csv");
-    eval_resultsFile << "Time (s),Detected ROI cluster,Total ROI cluster,ROI percentage,Average distance,Average volume accuracy,Covered ROI volume,False ROI volume,ROI key count,True ROI keys,False ROI keys,Last Step" << std::endl;
+    eval_fruitCellPercFile = std::ofstream("results_fruit_cells_" + std::to_string(eval_trial_num) + ".csv");
+    eval_volumeAccuracyFile = std::ofstream("results_volume_accuracy_" + std::to_string(eval_trial_num) + ".csv");
+    eval_distanceFile = std::ofstream("results_distances_" + std::to_string(eval_trial_num) + ".csv");
+    evaluator->writeHeader(eval_resultsFile);
     eval_plannerStartTime = ros::Time::now();
     mode = SAMPLE_AUTOMATIC;
   }

@@ -38,7 +38,7 @@ int main(int argc, char **argv)
 
 
   const EvaluationParameters& params = evaluator.processDetectedRois();
-  ROS_INFO_STREAM("Detected ROIs: " << params.total_roi_clusters);
+  //ROS_INFO_STREAM("Detected ROIs: " << params.total_roi_clusters);
 
   for(ros::Rate rate(1); ros::ok(); rate.sleep());
 }

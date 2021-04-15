@@ -10,6 +10,10 @@
 #include <octomap/OcTree.h>
 #include <octomap_vpp/CountingOcTree.h>
 #include <octomap_vpp/NearestRegionOcTree.h>
+#include <octomap_vpp/octomap_pcl.h>
+#include <pcl/point_cloud.h>
+#include <pcl/point_types.h>
+#include <pcl/PointIndices.h>
 
 class GtOctreeLoader
 {
@@ -21,8 +25,12 @@ private:
   std::unordered_map<std::string, size_t> plant_name_map;
 
   std::shared_ptr<std::vector<octomap::OcTree>> final_fruit_trees;
+  std::shared_ptr<std::vector<octomap::KeySet>> final_fruit_keys;
   std::shared_ptr<octomap_vpp::CountingOcTree> indexed_fruit_tree;
   std::vector<size_t> fruit_cell_counts;
+
+  pcl::PointCloud<pcl::PointXYZ>::Ptr gt_pcl;
+  std::shared_ptr<std::vector<pcl::PointIndices>> gt_clusters;
 
   static inline octomap::OcTreeKey addKeys(const octomap::OcTreeKey &k1, const octomap::OcTreeKey &k2, const octomap::OcTreeKey &zero_key)
   {
@@ -44,6 +52,16 @@ public:
     return std::const_pointer_cast<const octomap_vpp::CountingOcTree>(indexed_fruit_tree);
   }
 
+  pcl::PointCloud<pcl::PointXYZ>::ConstPtr getPclCloud()
+  {
+    return boost::const_pointer_cast<const pcl::PointCloud<pcl::PointXYZ>>(gt_pcl);
+  }
+
+  std::shared_ptr<const std::vector<pcl::PointIndices>> getPclClusters()
+  {
+    return std::const_pointer_cast<const std::vector<pcl::PointIndices>>(gt_clusters);
+  }
+
   // return index of associated fruit, or 0 for no fruit
   unsigned int getFruitIndex(const octomap::OcTreeKey &key)
   {
@@ -58,6 +76,11 @@ public:
   size_t getNumFruitCells(size_t ind)
   {
     return fruit_cell_counts[ind];
+  }
+
+  std::vector<size_t> getFruitCellsCounts()
+  {
+    return fruit_cell_counts;
   }
 
   size_t getNumFruits()

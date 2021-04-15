@@ -1,7 +1,5 @@
 #include "evaluator.h"
 
-#include "viewpoint_planner.h"
-
 namespace roi_viewpoint_planner
 {
 
@@ -50,72 +48,6 @@ bool Evaluator::readGroundtruth()
   if (!gt_comparison)
     return false;
 
-  std::string package_path = ros::package::getPath("roi_viewpoint_planner");
-
-  std::stringstream resolution_sstr;
-  resolution_sstr << planner->getTreeResolution();
-  std::string resolution_str = resolution_sstr.str();
-
-  ROS_INFO_STREAM("Resolution string: " << resolution_str);
-
-  std::string gt_file = package_path + "/cfg/world_roi_gts/" + world_name + "_roi_gt.yaml";
-
-  ROS_INFO_STREAM("Reading ground truth");
-  std::ifstream gt_ifs(gt_file);
-
-  if (!gt_ifs.is_open())
-  {
-    ROS_INFO_STREAM("Could not open ground truth file " << gt_file);
-    return false;
-  }
-
-  roi_locations.clear();
-  roi_sizes.clear();
-
-  YAML::Node gt = YAML::Load(gt_ifs);
-  for (const YAML::Node &roi : gt["rois"])
-  {
-    roi_locations.push_back(roi["location"].as<octomap::point3d>());
-    roi_sizes.push_back(roi["size"].as<octomap::point3d>());
-  }
-
-  gt_ifs.close();
-
-  // Compute GT-keys from bounding boxes
-
-  gtRoiKeys.clear();
-  for (size_t i = 0; i < roi_locations.size(); i++)
-  {
-    octomap::OcTreeKey minKey = planner->getPlanningTree()->coordToKey(roi_locations[i] - roi_sizes[i] * 0.5);
-    octomap::OcTreeKey maxKey = planner->getPlanningTree()->coordToKey(roi_locations[i] + roi_sizes[i] * 0.5);
-    octomap::OcTreeKey curKey = minKey;
-    for (curKey[0] = minKey[0]; curKey[0] <= maxKey[0]; curKey[0]++)
-    {
-      for (curKey[1] = minKey[1]; curKey[1] <= maxKey[1]; curKey[1]++)
-      {
-        for (curKey[2] = minKey[2]; curKey[2] <= maxKey[2]; curKey[2]++)
-        {
-          gtRoiKeys.insert(curKey);
-        }
-      }
-    }
-  }
-  ROS_INFO_STREAM("BB ROI key count: " << gtRoiKeys.size());
-
-  // Read GT octree
-  /*std::string gt_octree_file = package_path + "/cfg/world_gt_octrees/gt_tree_" + world_name + "_" + resolution_str + ".bt";
-  octomap::OcTree gt_tree(gt_octree_file);
-  gt_tree.expand(); // for key computations to work
-
-  gt_tree_keys.clear();
-
-  for (auto it = gt_tree.begin_leafs(), end = gt_tree.end_leafs(); it != end; it++)
-  {
-    gt_tree_keys.insert(it.getKey());
-  }
-
-  ROS_INFO_STREAM("GT tree ROI key count: " << gt_tree_keys.size());*/
-
   gtLoader.reset(new GtOctreeLoader(world_name, planner->getTreeResolution()));
 
   octomap_msgs::Octomap fruit_ot_msg;
@@ -127,7 +59,7 @@ bool Evaluator::readGroundtruth()
   {
     gt_fruit_pub.publish(fruit_ot_msg);
   }
-  std::shared_ptr<octomap_vpp::NearestRegionOcTree> gt_fruits_inflated = octomap_vpp::NearestRegionOcTree::createFromCountringOctree(*gt_fruits, 0);
+  std::shared_ptr<octomap_vpp::NearestRegionOcTree> gt_fruits_inflated = octomap_vpp::NearestRegionOcTree::createFromCountringOctree(*gt_fruits, 0.2);
   msg_generated = octomap_msgs::fullMapToMsg(*gt_fruits_inflated, fruit_ot_msg);
   if (msg_generated)
   {
@@ -135,14 +67,17 @@ bool Evaluator::readGroundtruth()
   }
 
   auto isGtOcc = [](const octomap_vpp::CountingOcTree &tree, const octomap_vpp::CountingOcTreeNode *node) { return true; };
-  gt_pcl = octomap_vpp::octomapToPcl<octomap_vpp::CountingOcTree, pcl::PointXYZ>(*gt_fruits, isGtOcc);
+  gt_pcl = gtLoader->getPclCloud();
+  gt_clusters = gtLoader->getPclClusters();
+  computeHullsAndVolumes(gt_pcl, *gt_clusters, gt_hulls_clouds, gt_hulls_polygons, gt_params.fruit_volumes, gt_centroids);
 
-  computeGroundtruthPCL();
+  gt_params.num_fruits = gtLoader->getNumFruits();
+  gt_params.fruit_cell_counts = gtLoader->getFruitCellsCounts();
 
   return true;
 }
 
-void Evaluator::computeGroundtruthPCL()
+/*void Evaluator::computeGroundtruthPCL()
 {
   if (!gt_comparison || !use_pcl)
     return;
@@ -154,9 +89,9 @@ void Evaluator::computeGroundtruthPCL()
 
   clusterWithPCL(gt_pcl, gt_clusters);
   computeHullsAndVolumes(gt_pcl, gt_clusters, gt_hulls_clouds, gt_hulls_polygons, gt_cluster_volumes);
-}
+}*/
 
-void Evaluator::computeDetectionsPCL()
+/*void Evaluator::computeDetectionsPCL()
 {
   if (!use_pcl)
     return;
@@ -168,21 +103,21 @@ void Evaluator::computeDetectionsPCL()
 
   clusterWithPCL(roi_pcl, clusters);
   computeHullsAndVolumes(roi_pcl, clusters, hulls_clouds, hulls_polygons, cluster_volumes);
-}
+}*/
 
 void Evaluator::updateVisualizerGroundtruth()
 {
   if (!gt_comparison || !use_pcl)
     return;
 
-  gt_color_handler.reset(new pcl::visualization::PointCloudColorHandlerClusters<pcl::PointXYZ>(gt_pcl, gt_clusters));
+  gt_color_handler.reset(new pcl::visualization::PointCloudColorHandlerClusters<pcl::PointXYZ>(gt_pcl, *gt_clusters));
   viewer_mtx.lock();
   viewer->removeAllPointClouds(vp1);
   viewer->removeAllShapes(vp1);
   viewer->addPointCloud<pcl::PointXYZ> (gt_pcl, *gt_color_handler, "gt_cloud", vp1);
   if (config.show_hulls)
   {
-    for (size_t i = 0; i < gt_clusters.size(); i++)
+    for (size_t i = 0; i < gt_clusters->size(); i++)
     {
       std::string name = "gt_cluster_" + std::to_string(i);
       viewer->addPolygonMesh<pcl::PointXYZ>(gt_hulls_clouds[i], gt_hulls_polygons[i], name, vp1);
@@ -235,8 +170,8 @@ void Evaluator::reconfigureCallback(roi_viewpoint_planner::EvaluatorConfig &new_
 
   if (use_pcl)
   {
-    computeGroundtruthPCL();
-    updateVisualizerGroundtruth();
+    //computeGroundtruthPCL();
+    //updateVisualizerGroundtruth();
     processDetectedRois();
     updateVisualizerDetections();
   }
@@ -324,8 +259,8 @@ bool Evaluator::clusterWithPCL(pcl::PointCloud<pcl::PointXYZ>::ConstPtr input_cl
 bool Evaluator::computeHullsAndVolumes(pcl::PointCloud<pcl::PointXYZ>::ConstPtr input_cloud, const std::vector<pcl::PointIndices> &clusters,
                            std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr> &hulls_clouds,
                            std::vector<std::vector<pcl::Vertices>> &hulls_polygons,
-                           std::vector<double> &cluster_volumes
-                           )
+                           std::vector<double> &cluster_volumes,
+                           std::vector<pcl::PointXYZ> &centroids)
 {
   if (input_cloud->empty() || clusters.empty())
     return false;
@@ -365,6 +300,9 @@ bool Evaluator::computeHullsAndVolumes(pcl::PointCloud<pcl::PointXYZ>::ConstPtr 
     hulls_clouds.push_back(hull_cloud);
     hulls_polygons.push_back(hull_polygons);
     cluster_volumes.push_back(vol);
+    pcl::PointXYZ centroid;
+    pcl::computeCentroid(*input_cloud, cluster.indices, centroid);
+    centroids.push_back(centroid);
   }
   return true;
 }
@@ -415,8 +353,9 @@ void Evaluator::computePairsAndDistances()
   }
 }
 
-const EvaluationParameters& Evaluator::processDetectedRois()
+EvaluationParameters Evaluator::processDetectedRois()
 {
+  EvaluationParameters results;
   std::shared_ptr<octomap_vpp::RoiOcTree> roiTree = planner->getPlanningTree();
   if (!roiTree)
     return results;
@@ -424,165 +363,101 @@ const EvaluationParameters& Evaluator::processDetectedRois()
   planner->getTreeMutex().lock();
   roiTree->computeRoiKeys();
   octomap::KeySet roi_keys = roiTree->getRoiKeys();
-  std::tie(detected_locs, detected_sizes) = roiTree->getClusterCentersWithVolume();
-
-  // Mesh computations
-  /*std::vector<octomap::point3d> vertices;
-  std::vector<octomap_vpp::Triangle> faces;
-  auto isRoi = [](const octomap_vpp::RoiOcTree &tree, const octomap_vpp::RoiOcTreeNode *node) { return tree.isNodeROI(node); };
-  auto isOcc = [](const octomap_vpp::RoiOcTree &tree, const octomap_vpp::RoiOcTreeNode *node) { return node->getLogOdds() > 0; };
-  octomap_vpp::polygonizeSubset<octomap_vpp::RoiOcTree>(*roiTree, roi_keys, vertices, faces, isRoi);
-
-  // PCL Tests
-  auto faceClusters = octomap_vpp::computeFaceClusters(faces);
-  auto vertexClusters = octomap_vpp::computeClusterVertices(vertices, faceClusters);
-
-  for (const octomap::point3d_collection &coll : vertexClusters)
-  {
-    pcl::PointCloud<pcl::PointXYZ>::Ptr cluster_cloud = octomap_vpp::octomapPointCollectionToPcl<pcl::PointXYZ>(coll);
-    ROS_INFO_STREAM("Cluster cloud size: " << cluster_cloud->size());
-  }
-
-  pcl::PointCloud<pcl::PointXYZ>::Ptr pcl_cloud = octomap_vpp::octomapToPcl<octomap_vpp::RoiOcTree, pcl::PointXYZ>(*roiTree, isOcc);
-  ROS_INFO_STREAM(pcl_cloud->size());*/
-
-  auto isRoi = [](const octomap_vpp::RoiOcTree &tree, const octomap_vpp::RoiOcTreeNode *node) { return tree.isNodeROI(node); };
-  roi_pcl = octomap_vpp::octomapToPcl<octomap_vpp::RoiOcTree, pcl::PointXYZ>(*roiTree, isRoi);
-
   planner->getTreeMutex().unlock();
 
-  publishCubeVisualization(gt_pub, detected_locs, detected_sizes, COLOR_RED, "detected_rois");
+  /*size_t detected_roi_clusters;
+  double average_distance;
+  double average_accuracy;
+  double covered_roi_volume;
+  size_t roi_key_count;
+  size_t true_roi_key_count;
+  size_t false_roi_key_count;
+  std::vector<double> fruit_cell_counts;
+  std::vector<double> fruit_cell_percentages;
+  std::vector<double> volume_accuracies;
+  std::vector<double> distances;
+  std::vector<double> volumes;*/
 
-  if (use_pcl)
-  {
-    computeDetectionsPCL();
-    updateVisualizerDetections();
-  }
-
-  // ROS_INFO_STREAM("GT-Rois: " << roi_locations.size() << ", detected Rois: " << detected_locs.size());
-
-  double average_dist = 0;
-  double average_vol_accuracy = 0;
-  if (gt_comparison)
-  {
-    computePairsAndDistances(); // computes roiPairs and distances
-
-    ROS_INFO_STREAM("Closest point pairs:");
-    for (const IndexPair &pair : roiPairs)
-    {
-      ROS_INFO_STREAM(roi_locations[pair.gt_ind] << " and " << detected_locs[pair.det_ind] << "; distance: " << distances(pair.gt_ind, pair.det_ind));
-      double gs = roi_sizes[pair.gt_ind].x() * roi_sizes[pair.gt_ind].y() * roi_sizes[pair.gt_ind].z();
-      double ds = detected_sizes[pair.det_ind].x() * detected_sizes[pair.det_ind].y() * detected_sizes[pair.det_ind].z();
-
-      double accuracy = 1 - std::abs(ds - gs) / gs;
-
-      ROS_INFO_STREAM("Sizes: " << roi_sizes[pair.gt_ind] << " and " << detected_sizes[pair.det_ind] << "; factor: " << (ds / gs));
-
-      average_dist += distances(pair.gt_ind, pair.det_ind);
-      average_vol_accuracy += accuracy;
-    }
-
-    if (roiPairs.size() > 0)
-    {
-      average_dist /= roiPairs.size();
-      average_vol_accuracy /= roiPairs.size();
-    }
-  }
-
-  // Compute volume overlap
-
-  octomap::KeySet detectedRoiBBkeys;
-  octomap::KeySet correctRoiBBkeys;
-  octomap::KeySet falseRoiBBkeys;
-  planner->getTreeMutex().lock();
-  for (size_t i = 0; i < detected_locs.size(); i++)
-  {
-    octomap::OcTreeKey minKey = roiTree->coordToKey(detected_locs[i] - detected_sizes[i] * 0.5);
-    octomap::OcTreeKey maxKey = roiTree->coordToKey(detected_locs[i] + detected_sizes[i] * 0.5);
-    octomap::OcTreeKey curKey = minKey;
-    for (curKey[0] = minKey[0]; curKey[0] <= maxKey[0]; curKey[0]++)
-    {
-      for (curKey[1] = minKey[1]; curKey[1] <= maxKey[1]; curKey[1]++)
-      {
-        for (curKey[2] = minKey[2]; curKey[2] <= maxKey[2]; curKey[2]++)
-        {
-          detectedRoiBBkeys.insert(curKey);
-          if (gt_comparison)
-          {
-            if (gtRoiKeys.find(curKey) != gtRoiKeys.end())
-            {
-              correctRoiBBkeys.insert(curKey);
-            }
-            else
-            {
-              falseRoiBBkeys.insert(curKey);
-            }
-          }
-        }
-      }
-    }
-  }
-  planner->getTreeMutex().unlock();
-  //ROS_INFO_STREAM("Detected key count: " << detectedRoiBBkeys.size() << ", correct: " << correctRoiBBkeys.size() << ", false: " << falseRoiBBkeys.size());
-
-
-  double coveredRoiVolumeRatio = 0;
-  double falseRoiVolumeRatio = 0;
-  if (gt_comparison)
-  {
-    coveredRoiVolumeRatio = (double)correctRoiBBkeys.size() / (double)gtRoiKeys.size();
-    falseRoiVolumeRatio = detectedRoiBBkeys.size() ? (double)falseRoiBBkeys.size() / (double)detectedRoiBBkeys.size() : 0;
-    //ROS_INFO_STREAM("Det vol ratio: " << coveredRoiVolumeRatio << ", False vol ratio: " << falseRoiVolumeRatio);
-  }
+  results.roi_key_count = roi_keys.size();
 
   // Computations directly with ROI cells
-  octomap::KeySet true_roi_keys, false_roi_keys;
   if (gt_comparison)
   {
-    results.fruit_cell_counts.clear();
-    results.fruit_cell_counts.resize(gtLoader->getNumFruits(), 0);
-    results.fruit_cell_percentages.clear();
-    results.fruit_cell_percentages.resize(gtLoader->getNumFruits(), 0);
+    results.fruit_cell_counts.resize(gt_params.num_fruits);
+    results.fruit_cell_percentages.resize(gt_params.num_fruits);
+    results.volume_accuracies.resize(gt_params.num_fruits);
+    results.distances.resize(gt_params.num_fruits);
+    roi_pcl.reset(new pcl::PointCloud<pcl::PointXYZ>());
+    clusters.clear();
+    clusters.resize(gt_params.num_fruits);
     for (const octomap::OcTreeKey &key : roi_keys)
     {
-      if (gtRoiKeys.find(key) != gtRoiKeys.end())
-      {
-        true_roi_keys.insert(key);
-      }
-      else
-      {
-        false_roi_keys.insert(key);
-      }
-
       // new per-fruit comparison
       unsigned int ind = gtLoader->getFruitIndex(key);
       if (ind != 0)
+      {
+        octomap::point3d coord = planner->getPlanningTree()->keyToCoord(key);
+        clusters[ind - 1].indices.push_back(roi_pcl->size());
+        roi_pcl->push_back(octomap_vpp::octomapPointToPcl<pcl::PointXYZ>(coord));
         results.fruit_cell_counts[ind - 1]++;
+        results.true_roi_key_count++;
+      }
+      else
+      {
+        results.false_roi_key_count++;
+      }
     }
-    for (size_t i = 0; i < gtLoader->getNumFruits(); i++)
+
+    hulls_clouds.clear();
+    hulls_polygons.clear();
+    std::vector<pcl::PointXYZ> centroids;
+    computeHullsAndVolumes(roi_pcl, clusters, hulls_clouds, hulls_polygons, results.volumes, centroids);
+
+    for (size_t i = 0; i < gt_params.num_fruits; i++)
     {
-      results.fruit_cell_percentages[i] = (double)results.fruit_cell_counts[i] / (double)gtLoader->getNumFruitCells(i);
+      if (results.fruit_cell_counts[i] > 0)
+      {
+        results.detected_roi_clusters++;
+        results.fruit_cell_percentages[i] = (double)results.fruit_cell_counts[i] / (double)gtLoader->getNumFruitCells(i);
+        results.distances[i] = pcl::squaredEuclideanDistance(gt_centroids[i], centroids[i]);
+        results.volume_accuracies[i] = results.volumes[i] / gt_params.fruit_volumes[i];
+        results.average_accuracy += results.volume_accuracies[i];
+        results.covered_roi_volume += results.volume_accuracies[i];
+        results.average_distance += results.distances[i];
+      }
+
     }
+    results.average_distance /= results.detected_roi_clusters;
+    results.average_accuracy /= results.detected_roi_clusters;
+    results.covered_roi_volume /= gt_params.num_fruits;
   }
 
-  //resultsFile << "Time (s), Detected ROIs, ROI percentage, Average distance, Average volume accuracy, Covered ROI volume, False ROI volume, ROI key count, True ROI keys, False ROI keys" << std::endl;
-
-  results.total_roi_clusters = detected_locs.size();
   results.roi_key_count = roi_keys.size();
 
-  if (gt_comparison)
-  {
-    results.detected_roi_clusters = roiPairs.size();
-    results.roi_percentage = (double)roiPairs.size() / (double)roi_locations.size();
-    results.average_distance = average_dist;
-    results.average_accuracy = average_vol_accuracy;
-    results.covered_roi_volume = coveredRoiVolumeRatio;
-    results.false_roi_volume = falseRoiVolumeRatio;
-    results.true_roi_key_count = true_roi_keys.size();
-    results.false_roi_key_count = false_roi_keys.size();
-  }
-
   return results;
+}
+
+void Evaluator::writeHeader(ostream &os)
+{
+  os << "Time (s),Detected ROI cluster,Average distance,Average volume accuracy,Covered ROI volume,ROI key count,True ROI keys,False ROI keys" << std::endl;
+}
+
+void Evaluator::writeParams(ostream &os, double passed_time, const EvaluationParameters &res)
+{
+  /*size_t detected_roi_clusters;
+  double average_distance;
+  double average_accuracy;
+  double covered_roi_volume;
+  size_t roi_key_count;
+  size_t true_roi_key_count;
+  size_t false_roi_key_count;
+  std::vector<double> fruit_cell_counts;
+  std::vector<double> fruit_cell_percentages;
+  std::vector<double> volume_accuracies;
+  std::vector<double> distances;
+  std::vector<double> volumes;*/
+  os << passed_time << "," << res.detected_roi_clusters << "," << res.average_distance << "," << res.average_accuracy << "," << res.covered_roi_volume
+     << "," << res.roi_key_count << "," << res.true_roi_key_count << "," << res.false_roi_key_count << std::endl;
 }
 
 }

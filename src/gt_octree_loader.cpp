@@ -26,7 +26,8 @@ struct convert<octomap::point3d> {
 }
 
 GtOctreeLoader::GtOctreeLoader(const std::string &world_name, double resolution) : package_path(ros::package::getPath("roi_viewpoint_planner")),
-  final_fruit_trees(new std::vector<octomap::OcTree>), indexed_fruit_tree(new octomap_vpp::CountingOcTree(resolution))
+  final_fruit_trees(new std::vector<octomap::OcTree>), indexed_fruit_tree(new octomap_vpp::CountingOcTree(resolution)),
+  gt_pcl(new pcl::PointCloud<pcl::PointXYZ>()), gt_clusters(new std::vector<pcl::PointIndices>()), final_fruit_keys(new std::vector<octomap::KeySet>())
 {
   std::ostringstream oss;
   oss << std::setprecision(8) << std::noshowpoint << resolution;
@@ -56,18 +57,27 @@ GtOctreeLoader::GtOctreeLoader(const std::string &world_name, double resolution)
     //std::unordered_map<std::string, size_t> plant_name_map;
 
     const std::vector<octomap::KeySet> &plant_keys = plant_fruit_keys[it->second];
-    octomap::OcTree fruit_tree(resolution);
-    octomap::OcTreeKey plantBaseKey = fruit_tree.coordToKey(loc);
+    octomap::OcTreeKey plantBaseKey = indexed_fruit_tree->coordToKey(loc);
     for (const octomap::KeySet &fruit_keys : plant_keys)
     {
+      octomap::OcTree fruit_tree(resolution);
+      octomap::KeySet fruit_keys_global;
+      pcl::PointIndices fruit_indices;
       for (const octomap::OcTreeKey &key : fruit_keys)
       {
+        octomap::point3d coord = indexed_fruit_tree->keyToCoord(key);
         octomap::OcTreeKey resKey = addKeys(plantBaseKey, key, ZERO_KEY);
         fruit_tree.setNodeValue(resKey, fruit_tree.getClampingThresMaxLog());
+        fruit_keys_global.insert(resKey);
         indexed_fruit_tree->setNodeCount(resKey, fruit_index);
+        fruit_indices.indices.push_back(gt_pcl->size());
+        gt_pcl->push_back(octomap_vpp::octomapPointToPcl<pcl::PointXYZ>(coord));
+
       }
       final_fruit_trees->push_back(fruit_tree);
-      fruit_cell_counts.push_back(fruit_keys.size());
+      fruit_cell_counts.push_back(fruit_keys_global.size());
+      final_fruit_keys->push_back(fruit_keys_global);
+      gt_clusters->push_back(fruit_indices);
       fruit_index++;
     }
   }

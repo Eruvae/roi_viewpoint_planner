@@ -45,7 +45,7 @@ int main(int argc, char **argv)
 
     double passed_time = (currentTime - plannerStartTime).toSec();
 
-    resultsFile << passed_time << ", " << res.total_roi_clusters << ", " << res.roi_key_count << std::endl;
+    resultsFile << passed_time << ", " << res.roi_key_count << std::endl;
   }
 
   resultsFile.close();
