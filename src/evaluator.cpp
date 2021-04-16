@@ -437,12 +437,13 @@ EvaluationParameters Evaluator::processDetectedRois()
   return results;
 }
 
-void Evaluator::writeHeader(ostream &os)
+ostream& Evaluator::writeHeader(ostream &os)
 {
-  os << "Time (s),Detected ROI cluster,Average distance,Average volume accuracy,Covered ROI volume,ROI key count,True ROI keys,False ROI keys" << std::endl;
+  os << "Time (s),Detected ROI cluster,Average distance,Average volume accuracy,Covered ROI volume,ROI key count,True ROI keys,False ROI keys";
+  return os;
 }
 
-void Evaluator::writeParams(ostream &os, double passed_time, const EvaluationParameters &res)
+ostream& Evaluator::writeParams(ostream &os, double passed_time, const EvaluationParameters &res)
 {
   /*size_t detected_roi_clusters;
   double average_distance;
@@ -457,7 +458,8 @@ void Evaluator::writeParams(ostream &os, double passed_time, const EvaluationPar
   std::vector<double> distances;
   std::vector<double> volumes;*/
   os << passed_time << "," << res.detected_roi_clusters << "," << res.average_distance << "," << res.average_accuracy << "," << res.covered_roi_volume
-     << "," << res.roi_key_count << "," << res.true_roi_key_count << "," << res.false_roi_key_count << std::endl;
+     << "," << res.roi_key_count << "," << res.true_roi_key_count << "," << res.false_roi_key_count;
+  return os;
 }
 
 }

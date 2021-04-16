@@ -253,7 +253,7 @@ public:
 
   bool initializeEvaluator(ros::NodeHandle &nh, ros::NodeHandle &nhp);
   bool startEvaluator(size_t numEvals, double episodeDuration);
-  bool saveEvaluatorData();
+  bool saveEvaluatorData(double plan_length, double planning_time);
   bool resetEvaluator();
 
   // Set planner parameters
