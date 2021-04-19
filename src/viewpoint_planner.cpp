@@ -1253,7 +1253,7 @@ std::vector<Viewpoint> ViewpointPlanner::sampleAroundMultiROICenters(const std::
         if (!manipulator_group.setJointValueTarget(transformToWorkspace(vp.pose), "camera_link"))
           continue;
 
-        vp.joint_target.reset(new robot_state::RobotState(manipulator_group.getJointValueTarget()));
+        manipulator_group.getJointValueTarget(vp.joint_target);
       }
 
       planningTree->computeRayKeys(center, spherePoint, ray);
@@ -1377,7 +1377,7 @@ std::vector<Viewpoint> ViewpointPlanner::sampleContourPoints(const octomap::poin
       if (!manipulator_group.setJointValueTarget(transformToWorkspace(vp.pose), "camera_link"))
         continue;
 
-      vp.joint_target.reset(new robot_state::RobotState(manipulator_group.getJointValueTarget()));
+      manipulator_group.getJointValueTarget(vp.joint_target);
     }
     octomap_vpp::RoiOcTreeNode *node = planningTree->search(vpOrig);
     if (node != NULL && node->getLogOdds() > 0) // Node is occupied
@@ -1480,7 +1480,7 @@ std::vector<Viewpoint> ViewpointPlanner::sampleRoiContourPoints(const octomap::p
       if (!manipulator_group.setJointValueTarget(transformToWorkspace(vp.pose), "camera_link"))
         continue;
 
-      vp.joint_target.reset(new robot_state::RobotState(manipulator_group.getJointValueTarget()));
+      manipulator_group.getJointValueTarget(vp.joint_target);
     }
 
     planningTree->computeRayKeys(target, spherePoint, ray);
@@ -1586,7 +1586,7 @@ std::vector<Viewpoint> ViewpointPlanner::sampleRoiAdjecentCountours(const octoma
       if (!manipulator_group.setJointValueTarget(transformToWorkspace(vp.pose), "camera_link"))
         continue;
 
-      vp.joint_target.reset(new robot_state::RobotState(manipulator_group.getJointValueTarget()));
+      manipulator_group.getJointValueTarget(vp.joint_target);
     }
 
     planningTree->computeRayKeys(target, spherePoint, ray);
@@ -1682,7 +1682,7 @@ std::vector<Viewpoint> ViewpointPlanner::sampleExplorationPoints(const octomap::
       if (!manipulator_group.setJointValueTarget(transformToWorkspace(vp.pose), "camera_link"))
         continue;
 
-      vp.joint_target.reset(new robot_state::RobotState(manipulator_group.getJointValueTarget()));
+      manipulator_group.getJointValueTarget(vp.joint_target);
     }
 
     vp.target = target;
@@ -1749,7 +1749,7 @@ std::vector<Viewpoint> ViewpointPlanner::sampleBorderPoints(const octomap::point
       if (!manipulator_group.setJointValueTarget(transformToWorkspace(vp.pose), "camera_link"))
         continue;
 
-      vp.joint_target.reset(new robot_state::RobotState(manipulator_group.getJointValueTarget()));
+      manipulator_group.getJointValueTarget(vp.joint_target);
     }
 
 
@@ -1826,15 +1826,22 @@ bool ViewpointPlanner::moveToPose(const geometry_msgs::Pose &goal_pose, bool asy
 
 bool ViewpointPlanner::moveToState(const robot_state::RobotState &goal_state, bool async, bool safe)
 {
-  manipulator_group.setJointValueTarget(goal_state);
+  if (!manipulator_group.setJointValueTarget(goal_state))
+  {
+    ROS_INFO_STREAM("Couldn't set joint target, make sure values are in bounds");
+    return false;
+  }
 
   return planAndExecuteFromMoveGroup(async, safe);
 }
 
 bool ViewpointPlanner::moveToState(const std::vector<double> &joint_values, bool async, bool safe)
 {
-  kinematic_state->setJointGroupPositions(joint_model_group, joint_values);
-  manipulator_group.setJointValueTarget(*kinematic_state);
+  if (!manipulator_group.setJointValueTarget(joint_values))
+  {
+    ROS_INFO_STREAM("Couldn't set joint target, make sure values are in bounds");
+    return false;
+  }
 
   return planAndExecuteFromMoveGroup(async, safe);
 }
@@ -2214,7 +2221,7 @@ void ViewpointPlanner::plannerLoop()
       {
         if (compute_ik_when_sampling)
         {
-          if (moveToState(*vp.joint_target))
+          if (moveToState(vp.joint_target))
           {
             move_success = true;
             break;

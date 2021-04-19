@@ -61,7 +61,8 @@ std::vector<Viewpoint> RoiContourSampler::sampleViewpoints()
         if (!planner->manipulator_group.setJointValueTarget(planner->transformToWorkspace(vp.pose), "camera_link"))
           continue;
 
-        vp.joint_target.reset(new robot_state::RobotState(planner->manipulator_group.getJointValueTarget()));
+        planner->manipulator_group.getJointValueTarget(vp.joint_target);
+
       }
 
       if (utility->computeUtility(vp, origin, target, viewQuat))
@@ -132,7 +133,7 @@ std::vector<Viewpoint> RoiAdjacentSampler::sampleViewpoints()
         if (!planner->manipulator_group.setJointValueTarget(planner->transformToWorkspace(vp.pose), "camera_link"))
           continue;
 
-        vp.joint_target.reset(new robot_state::RobotState(planner->manipulator_group.getJointValueTarget()));
+        planner->manipulator_group.getJointValueTarget(vp.joint_target);
       }
 
       if (utility->computeUtility(vp, origin, target, viewQuat))
@@ -196,7 +197,7 @@ std::vector<Viewpoint> ExplorationSampler::sampleViewpoints()
         if (!planner->manipulator_group.setJointValueTarget(planner->transformToWorkspace(vp.pose), "camera_link"))
           continue;
 
-        vp.joint_target.reset(new robot_state::RobotState(planner->manipulator_group.getJointValueTarget()));
+        planner->manipulator_group.getJointValueTarget(vp.joint_target);
       }
 
       vp.target = target;
@@ -269,7 +270,7 @@ std::vector<Viewpoint> ContourSampler::sampleViewpoints()
         if (!planner->manipulator_group.setJointValueTarget(planner->transformToWorkspace(vp.pose), "camera_link"))
           continue;
 
-        vp.joint_target.reset(new robot_state::RobotState(planner->manipulator_group.getJointValueTarget()));
+        planner->manipulator_group.getJointValueTarget(vp.joint_target);
       }
       octomap_vpp::RoiOcTreeNode *node = planner->planningTree->search(origin);
       if (node != nullptr && node->getLogOdds() > 0) // Node is occupied
@@ -339,7 +340,7 @@ std::vector<Viewpoint> BorderSampler::sampleViewpoints()
         if (!planner->manipulator_group.setJointValueTarget(planner->transformToWorkspace(vp.pose), "camera_link"))
           continue;
 
-        vp.joint_target.reset(new robot_state::RobotState(planner->manipulator_group.getJointValueTarget()));
+        planner->manipulator_group.getJointValueTarget(vp.joint_target);
       }
 
       if (utility->computeUtility(vp, origin, vp.target, viewQuat))

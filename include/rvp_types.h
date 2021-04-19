@@ -11,7 +11,7 @@ namespace roi_viewpoint_planner
 struct Viewpoint
 {
   geometry_msgs::Pose pose;
-  robot_state::RobotStatePtr joint_target;
+  std::vector<double> joint_target;
   octomap::point3d target;
   double infoGain;
   double distance;
