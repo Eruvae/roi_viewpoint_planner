@@ -229,7 +229,7 @@ bool ViewpointPlanner::startEvaluator(size_t numEvals, double episodeDuration)
   eval_fruitCellPercFile = std::ofstream("results_fruit_cells_" + std::to_string(eval_trial_num) + ".csv");
   eval_volumeAccuracyFile = std::ofstream("results_volume_accuracy_" + std::to_string(eval_trial_num) + ".csv");
   eval_distanceFile = std::ofstream("results_distances_" + std::to_string(eval_trial_num) + ".csv");
-  evaluator->writeHeader(eval_resultsFile);
+  evaluator->writeHeader(eval_resultsFile) << ",Step,Plan length,Planning Time" << std::endl;
   eval_total_trials = numEvals;
   eval_episode_duration = episodeDuration;
   eval_plannerStartTime = ros::Time::now();
@@ -241,7 +241,7 @@ bool ViewpointPlanner::startEvaluator(size_t numEvals, double episodeDuration)
 }
 
 template<typename T>
-void writeVector(std::ostream &os, double passed_time, const std::vector<T> &vec)
+std::ostream& writeVector(std::ostream &os, double passed_time, const std::vector<T> &vec)
 {
   os << passed_time << ",";
   for (size_t i = 0; i < vec.size(); i++)
@@ -249,12 +249,11 @@ void writeVector(std::ostream &os, double passed_time, const std::vector<T> &vec
     os << vec[i];
     if (i < vec.size() - 1)
       os << ",";
-    else
-      os << std::endl;
   }
+  return os;
 }
 
-bool ViewpointPlanner::saveEvaluatorData()
+bool ViewpointPlanner::saveEvaluatorData(double plan_length, double planning_time)
 {
   ros::Time currentTime = ros::Time::now();
 
@@ -262,11 +261,11 @@ bool ViewpointPlanner::saveEvaluatorData()
 
   double passed_time = (currentTime - eval_plannerStartTime).toSec();
 
-  evaluator->writeParams(eval_resultsFile, passed_time, res);
+  evaluator->writeParams(eval_resultsFile, passed_time, res) << "," << eval_lastStep << "," << plan_length << ", " << planning_time <<std::endl;
 
-  writeVector(eval_fruitCellPercFile, passed_time, res.fruit_cell_percentages);
-  writeVector(eval_volumeAccuracyFile, passed_time, res.volume_accuracies);
-  writeVector(eval_distanceFile, passed_time, res.distances);
+  writeVector(eval_fruitCellPercFile, passed_time, res.fruit_cell_percentages) << std::endl;
+  writeVector(eval_volumeAccuracyFile, passed_time, res.volume_accuracies) << std::endl;
+  writeVector(eval_distanceFile, passed_time, res.distances) << std::endl;
 
   if (passed_time > eval_episode_duration)
     resetEvaluator();
@@ -302,7 +301,7 @@ bool ViewpointPlanner::resetEvaluator()
     eval_fruitCellPercFile = std::ofstream("results_fruit_cells_" + std::to_string(eval_trial_num) + ".csv");
     eval_volumeAccuracyFile = std::ofstream("results_volume_accuracy_" + std::to_string(eval_trial_num) + ".csv");
     eval_distanceFile = std::ofstream("results_distances_" + std::to_string(eval_trial_num) + ".csv");
-    evaluator->writeHeader(eval_resultsFile);
+    evaluator->writeHeader(eval_resultsFile) << ",Step,Plan length,Planning Time" << std::endl;
     eval_plannerStartTime = ros::Time::now();
     mode = SAMPLE_AUTOMATIC;
   }
@@ -1896,7 +1895,7 @@ bool ViewpointPlanner::safeExecutePlan(const moveit::planning_interface::MoveGro
   if (eval_running)
   {
     for (ros::Rate r(100); !scanInserted; r.sleep()); // wait for scan
-    saveEvaluatorData();
+    saveEvaluatorData(computeTrajectoryLength(plan), plan.planning_time_);
   }
 
   return true;

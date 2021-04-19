@@ -175,8 +175,8 @@ public:
     return gt_params;
   }
 
-  void writeHeader(ostream &os);
-  void writeParams(ostream &os, double passed_time, const EvaluationParameters &res);
+  std::ostream& writeHeader(ostream &os);
+  std::ostream& writeParams(ostream &os, double passed_time, const EvaluationParameters &res);
 };
 
 } // namespace roi_viewpoint_planner
