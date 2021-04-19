@@ -169,7 +169,7 @@ private:
   std::default_random_engine random_engine;
 
   // Evaluator variables
-  bool eval_running = false;
+  bool eval_running;
   size_t eval_total_trials;
   double eval_episode_duration;
   size_t eval_trial_num;

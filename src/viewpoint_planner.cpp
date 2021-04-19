@@ -40,7 +40,8 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, co
   execute_plan(false),
   robotIsMoving(false),
   scanInserted(false),
-  m2s_current_steps(0)
+  m2s_current_steps(0),
+  eval_running(false)
 {
 
   std::stringstream fDateTime;
@@ -1836,7 +1837,7 @@ bool ViewpointPlanner::moveToState(const std::vector<double> &joint_values, bool
   kinematic_state->setJointGroupPositions(joint_model_group, joint_values);
   manipulator_group.setJointValueTarget(*kinematic_state);
 
-  planAndExecuteFromMoveGroup(async, safe);
+  return planAndExecuteFromMoveGroup(async, safe);
 }
 
 bool ViewpointPlanner::planAndExecuteFromMoveGroup(bool async, bool safe)
