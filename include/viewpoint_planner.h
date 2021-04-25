@@ -63,7 +63,9 @@ namespace std {
 #include "evaluator.h"
 #include "planner_interfaces/direct_planner_interface.h"
 
-#define PUBLISH_PLANNING_TIMES
+#include "time_logger.h"
+
+//#define PUBLISH_PLANNING_TIMES
 
 #ifdef PUBLISH_PLANNING_TIMES
 #include <roi_viewpoint_planner_msgs/PlanningTimes.h>
@@ -130,6 +132,8 @@ private:
   std::string bag_write_filename;
   std::string bag_final_filename;
   rosbag::Bag plannerBag;
+
+  TimeLogger timeLogger;
 
   boost::mutex tree_mtx;
 

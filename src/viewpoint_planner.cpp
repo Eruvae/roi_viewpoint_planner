@@ -237,6 +237,7 @@ bool ViewpointPlanner::startEvaluator(size_t numEvals, double episodeDuration)
   mode = SAMPLE_AUTOMATIC;
   execute_plan = true;
   require_execution_confirmation = false;
+  timeLogger.initNewFile();
   return true;
 }
 
@@ -279,6 +280,7 @@ bool ViewpointPlanner::resetEvaluator()
   eval_fruitCellPercFile.close();
   eval_volumeAccuracyFile.close();
   eval_distanceFile.close();
+  timeLogger.initNewFile();
   eval_trial_num++;
 
   mode = IDLE;
@@ -1893,6 +1895,8 @@ bool ViewpointPlanner::safeExecutePlan(const moveit::planning_interface::MoveGro
     plannerStatePub.publish(state);
   }
 
+  timeLogger.saveTime(TimeLogger::PLAN_EXECUTED);
+
   if (!res)
   {
     ROS_INFO("Could not execute plan");
@@ -1902,7 +1906,9 @@ bool ViewpointPlanner::safeExecutePlan(const moveit::planning_interface::MoveGro
   if (eval_running)
   {
     for (ros::Rate r(100); !scanInserted; r.sleep()); // wait for scan
+    timeLogger.saveTime(TimeLogger::WAITED_FOR_SCAN);
     saveEvaluatorData(computeTrajectoryLength(plan), plan.planning_time_);
+    timeLogger.saveTime(TimeLogger::EVALUATED);
   }
 
   return true;
@@ -1997,8 +2003,10 @@ void ViewpointPlanner::resetOctomap()
 
 void ViewpointPlanner::plannerLoop()
 {
-  for (ros::Rate rate(10); ros::ok(); rate.sleep())
+  for (ros::Rate rate(10); ros::ok(); timeLogger.endLoop(), rate.sleep())
   {
+    timeLogger.startLoop();
+
     /*std::vector<double> mg_joint_values = manipulator_group.getCurrentJointValues();
     kinematic_state->setJointGroupPositions(joint_model_group, mg_joint_values);
     kinematic_state->setToRandomPositionsNearBy(joint_model_group, *kinematic_state, 0.2);
@@ -2011,6 +2019,8 @@ void ViewpointPlanner::plannerLoop()
       continue;
 
     publishMap();
+
+    timeLogger.saveTime(TimeLogger::MAP_PUBLISHED);
 
     if (mode == MAP_ONLY)
       continue;
@@ -2050,6 +2060,7 @@ void ViewpointPlanner::plannerLoop()
     tf2::Quaternion camQuat;
     tf2::fromMsg(camFrameTf.transform.rotation, camQuat);
 
+    timeLogger.saveTime(TimeLogger::CAM_POS_COMPUTED);
 
     if (activate_move_to_see && loop_state == M2S)
     {
@@ -2089,19 +2100,13 @@ void ViewpointPlanner::plannerLoop()
       }
       if (!m2s_success || m2s_current_steps >= m2s_max_steps)
       {
-        m2s_current_steps = 0;
-        loop_state = NORMAL;
-      }
-      else
-      {
-        continue;
-      }
-    }
+        if (!move_to_see_exclusive)
+          loop_state = NORMAL;
 
-    if (move_to_see_exclusive)
-    {
-      loop_state = M2S;
-      m2s_current_steps = 0;
+        m2s_current_steps = 0;
+      }
+
+      timeLogger.saveTime(TimeLogger::MOVE_TO_SEE_APPLIED);
       continue;
     }
 
@@ -2169,6 +2174,8 @@ void ViewpointPlanner::plannerLoop()
         saveViewpointsToBag(explSamplingVps, "explorationPoints", ros::Time::now());
     }
 
+    timeLogger.saveTime(TimeLogger::VIEWPOINTS_SAMPLED);
+
     //std::make_heap(roiViewpoints.begin(), roiViewpoints.end(), vpComp);
     //std::make_heap(borderVps.begin(), borderVps.end(), vpComp);
     //std::make_heap(contourVps.begin(), contourVps.end(), vpComp);
@@ -2199,6 +2206,8 @@ void ViewpointPlanner::plannerLoop()
         return borderVps;
       }*/
     }();
+
+    timeLogger.saveTime(TimeLogger::VIEWPOINTS_SELECTED);
 
     bool move_success = false;
     for (/*std::make_heap(nextViewpoints.begin(), nextViewpoints.end(), vpComp)*/; !nextViewpoints.empty(); std::pop_heap(nextViewpoints.begin(), nextViewpoints.end(), vpComp), nextViewpoints.pop_back())

@@ -255,6 +255,7 @@ bool RoiOcclusionUtility::computeUtility(Viewpoint &vp, const octomap::point3d &
       }
     }
     value /= x_steps * y_steps;
+    return true;
 }
 
 } // namespace roi_viewpoint_planner
