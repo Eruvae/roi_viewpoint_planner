@@ -446,6 +446,9 @@ EvaluationParameters Evaluator::processDetectedRois(bool save_pointcloud, size_t
 
 void Evaluator::saveClustersAsColoredCloud(const std::string &filename, pcl::PointCloud<pcl::PointXYZ>::ConstPtr input_cloud, const std::vector<pcl::PointIndices> &clusters)
 {
+  if (!input_cloud || input_cloud->empty())
+    return;
+
   pcl::PointCloud<pcl::PointXYZRGB> colored_cloud;
   colored_cloud.reserve(input_cloud->size());
   for (size_t cid=0; cid < clusters.size(); cid++)
@@ -460,6 +463,10 @@ void Evaluator::saveClustersAsColoredCloud(const std::string &filename, pcl::Poi
       colored_cloud.push_back(p);
     }
   }
+
+  if (colored_cloud.empty())
+    return;
+
   pcl::io::savePCDFile(filename, colored_cloud, true);
 }
 
