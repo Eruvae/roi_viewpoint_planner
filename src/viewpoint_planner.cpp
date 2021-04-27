@@ -203,6 +203,7 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, co
 
   ros::NodeHandle nh_eval("evaluator");
   initializeEvaluator(nh, nh_eval);
+  evaluator->saveGtAsColoredCloud();
 }
 
 ViewpointPlanner::~ViewpointPlanner()
@@ -258,9 +259,9 @@ bool ViewpointPlanner::saveEvaluatorData(double plan_length, double planning_tim
 {
   ros::Time currentTime = ros::Time::now();
 
-  EvaluationParameters res = evaluator->processDetectedRois();
-
   double passed_time = (currentTime - eval_plannerStartTime).toSec();
+
+  EvaluationParameters res = evaluator->processDetectedRois(true, eval_trial_num, static_cast<size_t>(passed_time));
 
   evaluator->writeParams(eval_resultsFile, passed_time, res) << "," << eval_lastStep << "," << plan_length << ", " << planning_time <<std::endl;
 

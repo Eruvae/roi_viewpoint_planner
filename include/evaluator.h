@@ -35,6 +35,7 @@
 #include "planner_interface.h"
 #include "gt_octree_loader.h"
 #include <octomap_vpp/NearestRegionOcTree.h>
+#include <pcl/io/pcd_io.h>
 
 namespace YAML {
 template<>
@@ -168,7 +169,15 @@ private:
 public:
   Evaluator(std::shared_ptr<PlannerInterface> planner, ros::NodeHandle &nh, ros::NodeHandle &nhp, bool gt_comparison = true, bool use_pcl = false);
 
-  EvaluationParameters processDetectedRois();
+  EvaluationParameters processDetectedRois(bool save_pointcloud=false, size_t trial_num=0, size_t step=0);
+
+  void saveClustersAsColoredCloud(const std::string &filename, pcl::PointCloud<pcl::PointXYZ>::ConstPtr input_cloud, const std::vector<pcl::PointIndices> &clusters);
+
+  void saveGtAsColoredCloud()
+  {
+    std::string filename = "gt_" + world_name + ".pcd";
+    saveClustersAsColoredCloud(filename, gt_pcl, *gt_clusters);
+  }
 
   const GroundtruthParameters& getGtParams()
   {

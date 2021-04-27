@@ -101,7 +101,7 @@ public:
 
     loop_started = false;
     file_index++;
-    out_file.open(file_prefix + std::to_string(file_index));
+    out_file.open(file_prefix + std::to_string(file_index) + ".csv");
     out_file << header_line << std::endl;
   }
 };

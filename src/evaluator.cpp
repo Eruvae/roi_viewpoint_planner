@@ -353,7 +353,7 @@ void Evaluator::computePairsAndDistances()
   }
 }
 
-EvaluationParameters Evaluator::processDetectedRois()
+EvaluationParameters Evaluator::processDetectedRois(bool save_pointcloud, size_t trial_num, size_t step)
 {
   EvaluationParameters results;
   std::shared_ptr<octomap_vpp::RoiOcTree> roiTree = planner->getPlanningTree();
@@ -408,6 +408,13 @@ EvaluationParameters Evaluator::processDetectedRois()
       }
     }
 
+    if (save_pointcloud)
+    {
+      std::stringstream filename;
+      filename << "pointcloud_" << trial_num << "_" << step << ".pcd";
+      saveClustersAsColoredCloud(filename.str(), roi_pcl, clusters);
+    }
+
     hulls_clouds.clear();
     hulls_polygons.clear();
     std::vector<pcl::PointXYZ> centroids;
@@ -435,6 +442,25 @@ EvaluationParameters Evaluator::processDetectedRois()
   results.roi_key_count = roi_keys.size();
 
   return results;
+}
+
+void Evaluator::saveClustersAsColoredCloud(const std::string &filename, pcl::PointCloud<pcl::PointXYZ>::ConstPtr input_cloud, const std::vector<pcl::PointIndices> &clusters)
+{
+  pcl::PointCloud<pcl::PointXYZRGB> colored_cloud;
+  colored_cloud.reserve(input_cloud->size());
+  for (size_t cid=0; cid < clusters.size(); cid++)
+  {
+    pcl::RGB color = pcl::GlasbeyLUT::at(cid % pcl::GlasbeyLUT::size());
+    for (int ind : clusters[cid].indices)
+    {
+      pcl::PointXYZRGB p(color.r, color.b, color.g);
+      p.x = input_cloud->at(ind).x;
+      p.y = input_cloud->at(ind).y;
+      p.z = input_cloud->at(ind).z;
+      colored_cloud.push_back(p);
+    }
+  }
+  pcl::io::savePCDFile(filename, colored_cloud, true);
 }
 
 ostream& Evaluator::writeHeader(ostream &os)

@@ -65,14 +65,13 @@ GtOctreeLoader::GtOctreeLoader(const std::string &world_name, double resolution)
       pcl::PointIndices fruit_indices;
       for (const octomap::OcTreeKey &key : fruit_keys)
       {
-        octomap::point3d coord = indexed_fruit_tree->keyToCoord(key);
         octomap::OcTreeKey resKey = addKeys(plantBaseKey, key, ZERO_KEY);
+        octomap::point3d coord = indexed_fruit_tree->keyToCoord(resKey);
         fruit_tree.setNodeValue(resKey, fruit_tree.getClampingThresMaxLog());
         fruit_keys_global.insert(resKey);
         indexed_fruit_tree->setNodeCount(resKey, fruit_index);
         fruit_indices.indices.push_back(gt_pcl->size());
         gt_pcl->push_back(octomap_vpp::octomapPointToPcl<pcl::PointXYZ>(coord));
-
       }
       final_fruit_trees->push_back(fruit_tree);
       fruit_cell_counts.push_back(fruit_keys_global.size());
