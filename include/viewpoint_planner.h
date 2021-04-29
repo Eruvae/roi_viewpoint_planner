@@ -175,6 +175,7 @@ private:
   // Evaluator variables
   bool eval_running;
   size_t eval_total_trials;
+  EvalEpisodeEndParam eval_epEndParam;
   double eval_episode_duration;
   size_t eval_trial_num;
   std::ofstream eval_resultsFile;
@@ -182,6 +183,8 @@ private:
   std::ofstream eval_volumeAccuracyFile;
   std::ofstream eval_distanceFile;
   ros::Time eval_plannerStartTime;
+  double eval_accumulatedPlanDuration;
+  double eval_accumulatedPlanLength;
   std::string eval_lastStep;
 
 public:
@@ -256,8 +259,8 @@ public:
   ~ViewpointPlanner();
 
   bool initializeEvaluator(ros::NodeHandle &nh, ros::NodeHandle &nhp);
-  bool startEvaluator(size_t numEvals, double episodeDuration);
-  bool saveEvaluatorData(double plan_length, double planning_time);
+  bool startEvaluator(size_t numEvals, EvalEpisodeEndParam episodeEndParam, double episodeDuration);
+  bool saveEvaluatorData(double plan_length, double traj_duration);
   bool resetEvaluator();
 
   // Set planner parameters

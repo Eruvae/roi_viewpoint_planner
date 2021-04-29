@@ -27,4 +27,9 @@ static double computeTrajectoryLength(const moveit::planning_interface::MoveGrou
   return traj_length;
 }
 
+inline static double getTrajectoryDuration(const moveit::planning_interface::MoveGroupInterface::Plan &plan)
+{
+  return plan.trajectory_.joint_trajectory.points.back().time_from_start.toSec();
+}
+
 #endif // RVP_UTILS_H

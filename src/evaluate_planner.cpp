@@ -37,6 +37,7 @@ int main(int argc, char **argv)
     const std::string singleFruitResultsName = "results_single_fruits_" + std::to_string(i) + ".csv";
     std::ofstream resultsFile(resultsFileName);
     std::ofstream singleFruitResultsFile(singleFruitResultsName);
+    resultsFile << "Time (s),";
     evaluator.writeHeader(resultsFile) << std::endl;
 
     bool planner_active = false;
@@ -60,7 +61,8 @@ int main(int argc, char **argv)
 
       double passed_time = (currentTime - plannerStartTime).toSec();
 
-      evaluator.writeParams(resultsFile, passed_time, res) << std::endl;
+      resultsFile << passed_time << ",";
+      evaluator.writeParams(resultsFile, res) << std::endl;
 
       singleFruitResultsFile << passed_time << ",";
       for (size_t i = 0; i < res.fruit_cell_percentages.size(); i++)

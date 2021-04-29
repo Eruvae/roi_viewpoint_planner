@@ -36,7 +36,7 @@ private:
 
   std::ofstream out_file;
   std::string file_prefix;
-  size_t file_index;
+  int file_index;
   bool loop_started;
 
   std::vector<std::string> line;
@@ -44,7 +44,7 @@ private:
   ros::Time time_last;
 
 public:
-  TimeLogger(const std::string &file_prefix = "rvp_times_") : file_prefix(file_prefix), file_index(-1), loop_started(false)
+  TimeLogger(const std::string &file_prefix = "rvp_times_") : file_prefix(file_prefix), file_index(-2), loop_started(false)
   {
     initNewFile();
   }

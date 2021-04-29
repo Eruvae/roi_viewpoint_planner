@@ -26,7 +26,15 @@ roi_viewpoint_planner::PlannerConfig current_config;
 
 bool startEvaluator(roi_viewpoint_planner_msgs::StartEvaluator::Request &req, roi_viewpoint_planner_msgs::StartEvaluator::Response &res)
 {
-  res.success = planner->startEvaluator(req.numEvals, req.episodeDuration);
+  if (req.episode_end_param >= static_cast<uint8_t>(roi_viewpoint_planner::EvalEpisodeEndParam::NUM_EPEND_PARAMS))
+  {
+    res.success = false;
+  }
+  else
+  {
+    roi_viewpoint_planner::EvalEpisodeEndParam epEndParam = static_cast<roi_viewpoint_planner::EvalEpisodeEndParam>(req.episode_end_param);
+    res.success = planner->startEvaluator(req.num_evals, epEndParam, req.episode_duration);
+  }
   return true;
 }
 

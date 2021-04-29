@@ -185,7 +185,7 @@ public:
   }
 
   std::ostream& writeHeader(ostream &os);
-  std::ostream& writeParams(ostream &os, double passed_time, const EvaluationParameters &res);
+  std::ostream& writeParams(ostream &os, const EvaluationParameters &res);
 };
 
 } // namespace roi_viewpoint_planner

@@ -29,6 +29,14 @@ enum class UtilityType
     SINGLE_RAY_UTILITY=0, MULTI_RAY_UTILITY=1, ROI_VICINITY_UTILITY=2, ROI_OCCLUSION_UTILITY=3
 };
 
+enum class EvalEpisodeEndParam
+{
+  TIME = 0,
+  PLAN_DURATION = 1,
+  PLAN_LENGTH = 2,
+  NUM_EPEND_PARAMS = 3
+};
+
 } // namespace roi_viewpoint_planner
 
 #endif // RVP_TYPES_H
