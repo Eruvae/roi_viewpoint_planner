@@ -227,11 +227,14 @@ bool ViewpointPlanner::startEvaluator(size_t numEvals, EvalEpisodeEndParam episo
 
   eval_trial_num = 0;
   eval_resultsFile = std::ofstream("planner_results_" + std::to_string(eval_trial_num) + ".csv");
+  eval_resultsFileOld = std::ofstream("planner_results_old" + std::to_string(eval_trial_num) + ".csv");
   eval_fruitCellPercFile = std::ofstream("results_fruit_cells_" + std::to_string(eval_trial_num) + ".csv");
   eval_volumeAccuracyFile = std::ofstream("results_volume_accuracy_" + std::to_string(eval_trial_num) + ".csv");
   eval_distanceFile = std::ofstream("results_distances_" + std::to_string(eval_trial_num) + ".csv");
   eval_resultsFile << "Time (s),Plan duration (s),Plan Length,";
   evaluator->writeHeader(eval_resultsFile) << ",Step" << std::endl;
+  eval_resultsFileOld << "Time (s),Plan duration (s),Plan Length,";
+  evaluator->writeHeaderOld(eval_resultsFileOld) << ",Step" << std::endl;
   eval_total_trials = numEvals;
   eval_epEndParam = episodeEndParam;
   eval_episode_duration = episodeDuration;
@@ -269,9 +272,13 @@ bool ViewpointPlanner::saveEvaluatorData(double plan_length, double traj_duratio
   eval_accumulatedPlanLength += plan_length;
 
   EvaluationParameters res = evaluator->processDetectedRois(true, eval_trial_num, static_cast<size_t>(passed_time));
+  EvaluationParametersOld resOld = evaluator->processDetectedRoisOld();
 
   eval_resultsFile << passed_time << "," << eval_accumulatedPlanDuration << "," << eval_accumulatedPlanLength << ",";
   evaluator->writeParams(eval_resultsFile, res) << "," << eval_lastStep << std::endl;
+
+  eval_resultsFileOld << passed_time << "," << eval_accumulatedPlanDuration << "," << eval_accumulatedPlanLength << ",";
+  evaluator->writeParamsOld(eval_resultsFileOld, resOld) << "," << eval_lastStep << std::endl;
 
   writeVector(eval_fruitCellPercFile, passed_time, res.fruit_cell_percentages) << std::endl;
   writeVector(eval_volumeAccuracyFile, passed_time, res.volume_accuracies) << std::endl;
@@ -310,6 +317,7 @@ bool ViewpointPlanner::saveEvaluatorData(double plan_length, double traj_duratio
 bool ViewpointPlanner::resetEvaluator()
 {
   eval_resultsFile.close();
+  eval_resultsFileOld.close();
   eval_fruitCellPercFile.close();
   eval_volumeAccuracyFile.close();
   eval_distanceFile.close();
@@ -333,11 +341,14 @@ bool ViewpointPlanner::resetEvaluator()
   if (eval_trial_num < eval_total_trials)
   {
     eval_resultsFile = std::ofstream("planner_results_" + std::to_string(eval_trial_num) + ".csv");
+    eval_resultsFileOld = std::ofstream("planner_results_old" + std::to_string(eval_trial_num) + ".csv");
     eval_fruitCellPercFile = std::ofstream("results_fruit_cells_" + std::to_string(eval_trial_num) + ".csv");
     eval_volumeAccuracyFile = std::ofstream("results_volume_accuracy_" + std::to_string(eval_trial_num) + ".csv");
     eval_distanceFile = std::ofstream("results_distances_" + std::to_string(eval_trial_num) + ".csv");
     eval_resultsFile << "Time (s),Plan duration (s),Plan Length,";
     evaluator->writeHeader(eval_resultsFile) << ",Step" << std::endl;
+    eval_resultsFileOld << "Time (s),Plan duration (s),Plan Length,";
+    evaluator->writeHeaderOld(eval_resultsFileOld) << ",Step" << std::endl;
     eval_plannerStartTime = ros::Time::now();
     eval_accumulatedPlanDuration = 0;
     eval_accumulatedPlanLength = 0;
@@ -1933,11 +1944,11 @@ bool ViewpointPlanner::safeExecutePlan(const moveit::planning_interface::MoveGro
 
   timeLogger.saveTime(TimeLogger::PLAN_EXECUTED);
 
-  if (!res)
+  /*if (!res)
   {
     ROS_INFO("Could not execute plan");
     return false;
-  }
+  }*/
 
   if (eval_running)
   {
@@ -2252,11 +2263,11 @@ void ViewpointPlanner::plannerLoop()
     for (/*std::make_heap(nextViewpoints.begin(), nextViewpoints.end(), vpComp)*/; !nextViewpoints.empty(); std::pop_heap(nextViewpoints.begin(), nextViewpoints.end(), vpComp), nextViewpoints.pop_back())
     {
       const Viewpoint &vp = nextViewpoints.front();
-      if (vp.utility <= 0)
+      /*if (vp.utility <= 0)
       {
         ROS_INFO_STREAM("No viewpoint with sufficient utility found.");
         break;
-      }
+      }*/
       if (use_cartesian_motion)
       {
         if (moveToPoseCartesian(transformToWorkspace(vp.pose)))

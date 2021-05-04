@@ -71,6 +71,24 @@ struct IndexPair
   size_t det_ind;
 };
 
+struct EvaluationParametersOld
+{
+  EvaluationParametersOld() : detected_roi_clusters(0), total_roi_clusters(0), roi_percentage(0),
+    average_distance(0), average_accuracy(0), covered_roi_volume(0), false_roi_volume(0),
+    roi_key_count(0), true_roi_key_count(0), false_roi_key_count(0) {}
+
+  size_t detected_roi_clusters;
+  size_t total_roi_clusters;
+  double roi_percentage;
+  double average_distance;
+  double average_accuracy;
+  double covered_roi_volume;
+  double false_roi_volume;
+  size_t roi_key_count;
+  size_t true_roi_key_count;
+  size_t false_roi_key_count;
+};
+
 struct EvaluationParameters
 {
   EvaluationParameters() : detected_roi_clusters(0), average_distance(0), average_accuracy(0),
@@ -169,6 +187,8 @@ private:
 public:
   Evaluator(std::shared_ptr<PlannerInterface> planner, ros::NodeHandle &nh, ros::NodeHandle &nhp, bool gt_comparison = true, bool use_pcl = false);
 
+  EvaluationParametersOld processDetectedRoisOld();
+
   EvaluationParameters processDetectedRois(bool save_pointcloud=false, size_t trial_num=0, size_t step=0);
 
   void saveClustersAsColoredCloud(const std::string &filename, pcl::PointCloud<pcl::PointXYZ>::ConstPtr input_cloud, const std::vector<pcl::PointIndices> &clusters);
@@ -183,6 +203,9 @@ public:
   {
     return gt_params;
   }
+
+  ostream& writeHeaderOld(ostream &os);
+  ostream& writeParamsOld(ostream &os, const EvaluationParametersOld &res);
 
   std::ostream& writeHeader(ostream &os);
   std::ostream& writeParams(ostream &os, const EvaluationParameters &res);
