@@ -174,6 +174,7 @@ private:
 
   // Evaluator variables
   bool eval_running;
+  int eval_start_index;
   size_t eval_total_trials;
   EvalEpisodeEndParam eval_epEndParam;
   double eval_episode_duration;
@@ -260,7 +261,8 @@ public:
   ~ViewpointPlanner();
 
   bool initializeEvaluator(ros::NodeHandle &nh, ros::NodeHandle &nhp);
-  bool startEvaluator(size_t numEvals, EvalEpisodeEndParam episodeEndParam, double episodeDuration);
+  bool startEvaluator(size_t numEvals, EvalEpisodeEndParam episodeEndParam, double episodeDuration, int start_index);
+  void setEvaluatorStartParams();
   bool saveEvaluatorData(double plan_length, double traj_duration);
   bool resetEvaluator();
 

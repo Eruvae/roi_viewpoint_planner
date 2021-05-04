@@ -94,13 +94,17 @@ public:
     loop_started = false;
   }
 
-  void initNewFile()
+  void initNewFile(bool set_index=false, int index=0)
   {
     if (out_file.is_open())
       out_file.close();
 
     loop_started = false;
-    file_index++;
+    if (set_index)
+      file_index = index;
+    else
+      file_index++;
+
     out_file.open(file_prefix + std::to_string(file_index) + ".csv");
     out_file << header_line << std::endl;
   }

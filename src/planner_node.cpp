@@ -33,7 +33,7 @@ bool startEvaluator(roi_viewpoint_planner_msgs::StartEvaluator::Request &req, ro
   else
   {
     roi_viewpoint_planner::EvalEpisodeEndParam epEndParam = static_cast<roi_viewpoint_planner::EvalEpisodeEndParam>(req.episode_end_param);
-    res.success = planner->startEvaluator(req.num_evals, epEndParam, req.episode_duration);
+    res.success = planner->startEvaluator(req.num_evals, epEndParam, req.episode_duration, req.starting_index);
   }
   return true;
 }

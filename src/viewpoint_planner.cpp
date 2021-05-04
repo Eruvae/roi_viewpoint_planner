@@ -217,36 +217,45 @@ bool ViewpointPlanner::initializeEvaluator(ros::NodeHandle &nh, ros::NodeHandle 
   std::shared_ptr<DirectPlannerInterface> interface(new DirectPlannerInterface(this));
   evaluator = new Evaluator(interface, nh, nhp, true);
   eval_trial_num = 0;
+  eval_start_index = 0;
   return true;
 }
 
-bool ViewpointPlanner::startEvaluator(size_t numEvals, EvalEpisodeEndParam episodeEndParam, double episodeDuration)
+bool ViewpointPlanner::startEvaluator(size_t numEvals, EvalEpisodeEndParam episodeEndParam, double episodeDuration, int start_index)
 {
   if (eval_running)
     return false;
 
   eval_trial_num = 0;
-  eval_resultsFile = std::ofstream("planner_results_" + std::to_string(eval_trial_num) + ".csv");
-  eval_resultsFileOld = std::ofstream("planner_results_old" + std::to_string(eval_trial_num) + ".csv");
-  eval_fruitCellPercFile = std::ofstream("results_fruit_cells_" + std::to_string(eval_trial_num) + ".csv");
-  eval_volumeAccuracyFile = std::ofstream("results_volume_accuracy_" + std::to_string(eval_trial_num) + ".csv");
-  eval_distanceFile = std::ofstream("results_distances_" + std::to_string(eval_trial_num) + ".csv");
+  eval_start_index = start_index;
+  eval_total_trials = numEvals;
+  eval_epEndParam = episodeEndParam;
+  eval_episode_duration = episodeDuration;  
+  eval_running = true;
+  execute_plan = true;
+  require_execution_confirmation = false;
+
+  setEvaluatorStartParams();
+  timeLogger.initNewFile(true, start_index);
+  return true;
+}
+
+void ViewpointPlanner::setEvaluatorStartParams()
+{
+  std::string file_index_str = std::to_string(eval_start_index + eval_trial_num);
+  eval_resultsFile = std::ofstream("planner_results_" + file_index_str + ".csv");
+  eval_resultsFileOld = std::ofstream("planner_results_old" + file_index_str + ".csv");
+  eval_fruitCellPercFile = std::ofstream("results_fruit_cells_" + file_index_str + ".csv");
+  eval_volumeAccuracyFile = std::ofstream("results_volume_accuracy_" + file_index_str + ".csv");
+  eval_distanceFile = std::ofstream("results_distances_" + file_index_str + ".csv");
   eval_resultsFile << "Time (s),Plan duration (s),Plan Length,";
   evaluator->writeHeader(eval_resultsFile) << ",Step" << std::endl;
   eval_resultsFileOld << "Time (s),Plan duration (s),Plan Length,";
   evaluator->writeHeaderOld(eval_resultsFileOld) << ",Step" << std::endl;
-  eval_total_trials = numEvals;
-  eval_epEndParam = episodeEndParam;
-  eval_episode_duration = episodeDuration;
   eval_plannerStartTime = ros::Time::now();
   eval_accumulatedPlanDuration = 0;
   eval_accumulatedPlanLength = 0;
-  eval_running = true;
   mode = SAMPLE_AUTOMATIC;
-  execute_plan = true;
-  require_execution_confirmation = false;
-  timeLogger.initNewFile();
-  return true;
 }
 
 template<typename T>
@@ -271,7 +280,7 @@ bool ViewpointPlanner::saveEvaluatorData(double plan_length, double traj_duratio
   eval_accumulatedPlanDuration += traj_duration;
   eval_accumulatedPlanLength += plan_length;
 
-  EvaluationParameters res = evaluator->processDetectedRois(true, eval_trial_num, static_cast<size_t>(passed_time));
+  EvaluationParameters res = evaluator->processDetectedRois(true, eval_start_index + eval_trial_num, static_cast<size_t>(passed_time));
   EvaluationParametersOld resOld = evaluator->processDetectedRoisOld();
 
   eval_resultsFile << passed_time << "," << eval_accumulatedPlanDuration << "," << eval_accumulatedPlanLength << ",";
@@ -340,19 +349,7 @@ bool ViewpointPlanner::resetEvaluator()
 
   if (eval_trial_num < eval_total_trials)
   {
-    eval_resultsFile = std::ofstream("planner_results_" + std::to_string(eval_trial_num) + ".csv");
-    eval_resultsFileOld = std::ofstream("planner_results_old" + std::to_string(eval_trial_num) + ".csv");
-    eval_fruitCellPercFile = std::ofstream("results_fruit_cells_" + std::to_string(eval_trial_num) + ".csv");
-    eval_volumeAccuracyFile = std::ofstream("results_volume_accuracy_" + std::to_string(eval_trial_num) + ".csv");
-    eval_distanceFile = std::ofstream("results_distances_" + std::to_string(eval_trial_num) + ".csv");
-    eval_resultsFile << "Time (s),Plan duration (s),Plan Length,";
-    evaluator->writeHeader(eval_resultsFile) << ",Step" << std::endl;
-    eval_resultsFileOld << "Time (s),Plan duration (s),Plan Length,";
-    evaluator->writeHeaderOld(eval_resultsFileOld) << ",Step" << std::endl;
-    eval_plannerStartTime = ros::Time::now();
-    eval_accumulatedPlanDuration = 0;
-    eval_accumulatedPlanLength = 0;
-    mode = SAMPLE_AUTOMATIC;
+    setEvaluatorStartParams();
   }
   else
   {
