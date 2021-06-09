@@ -68,7 +68,6 @@
   <depend>dynamic_reconfigure</depend>
   <depend>roi_viewpoint_planner_msgs</depend>
   <depend>rosbag_storage</depend>
-  <depend>move_to_see_ros</depend>
   <!--depend>image_geometry</depend>
   <depend>instance_segmentation_msgs</depend>
   <depend>trolley_remote</depend-->

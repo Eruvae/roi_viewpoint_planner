@@ -2,7 +2,7 @@
 
 #include <std_msgs/Bool.h>
 #include <std_srvs/Trigger.h>
-#include <move_to_see_ros/GetGradient.h>
+#include <roi_viewpoint_planner_msgs/GetGradient.h>
 #include <roi_viewpoint_planner_msgs/ViewpointList.h>
 #include "octomap_vpp/marching_cubes.h"
 #include "octomap_vpp/octomap_transforms.h"
@@ -72,7 +72,7 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, co
   #endif
 
   requestExecutionConfirmation = nhp.serviceClient<std_srvs::Trigger>("request_execution_confirmation");
-  moveToSeeClient = nh.serviceClient<move_to_see_ros::GetGradient>("move_to_see_srv/get_gradient");
+  moveToSeeClient = nh.serviceClient<roi_viewpoint_planner_msgs::GetGradient>("move_to_see_srv/get_gradient");
 
   setPoseReferenceFrame(map_frame);
 
@@ -2109,7 +2109,7 @@ void ViewpointPlanner::plannerLoop()
     if (activate_move_to_see && loop_state == M2S)
     {
       bool m2s_success = false;
-      move_to_see_ros::GetGradient gradSrv;
+      roi_viewpoint_planner_msgs::GetGradient gradSrv;
       if (moveToSeeClient.call(gradSrv))
       {
         const auto &resp = gradSrv.response;
