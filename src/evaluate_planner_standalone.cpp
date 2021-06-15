@@ -25,8 +25,8 @@
 #include <std_srvs/Trigger.h>
 #include <roi_viewpoint_planner_msgs/SaveOctomap.h>
 #include "roi_viewpoint_planner_msgs/EvaluatorConfig.h"
-#include "compute_cubes.h"
-#include "point_cloud_color_handler_clusters.h"
+#include "roi_viewpoint_planner/compute_cubes.h"
+#include "roi_viewpoint_planner/point_cloud_color_handler_clusters.h"
 
 namespace ublas = boost::numeric::ublas;
 

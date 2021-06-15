@@ -128,10 +128,10 @@ find_package(PCL REQUIRED)
 ## CATKIN_DEPENDS: catkin_packages dependent projects also need
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
-#  INCLUDE_DIRS include
-#  LIBRARIES ${PROJECT_NAME}
+   INCLUDE_DIRS include
+   LIBRARIES ${PROJECT_NAME}_evaluator
    CATKIN_DEPENDS ${CATKIN_DEPENDENCIES}
-#  DEPENDS system_lib
+   DEPENDS OCTOMAP YAMLCPP PCL
 )
 
 ###########
@@ -178,19 +178,21 @@ set (EVALUATOR_SAVED_TREE_SRC_FILES
 )
 
 ## Declare a C++ library
-# add_library(${PROJECT_NAME}
-#   src/${PROJECT_NAME}/octomap_vpp.cpp
-# )
+add_library(${PROJECT_NAME}_evaluator
+  src/evaluator.cpp
+  src/gt_octree_loader.cpp
+  src/planner_interfaces/provided_tree_interface.cpp
+)
 
 ## Add cmake target dependencies of the library
 ## as an example, code may need to be generated before libraries
 ## either from message generation or dynamic reconfigure
 # add_dependencies(${PROJECT_NAME} ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+add_dependencies(${PROJECT_NAME}_evaluator ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 ## Declare a C++ executable
 ## With catkin_make all packages are built within a single CMake context
 ## The recommended prefix ensures that target names across packages don't collide
-# add_executable(${PROJECT_NAME}_node src/octomap_vpp_node.cpp)
 add_executable(planner_node src/planner_node.cpp ${VIEWPOINT_PLANNER_SRC_FILES})
 add_executable(evaluate_planner src/evaluate_planner.cpp ${EVALUATOR_EXT_PLANNER_SRC_FILES})
 add_executable(evaluate_rosbag_no_gt src/evaluate_rosbag_no_gt.cpp ${EVALUATOR_EXT_PLANNER_SRC_FILES})

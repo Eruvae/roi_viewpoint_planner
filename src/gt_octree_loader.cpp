@@ -1,4 +1,4 @@
-#include "gt_octree_loader.h"
+#include "roi_viewpoint_planner/gt_octree_loader.h"
 #include <yaml-cpp/yaml.h>
 
 namespace YAML {

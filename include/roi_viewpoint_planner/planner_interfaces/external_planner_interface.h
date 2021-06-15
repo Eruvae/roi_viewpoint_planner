@@ -1,7 +1,7 @@
 #ifndef EXTERNAL_PLANNER_INTERFACE_H
 #define EXTERNAL_PLANNER_INTERFACE_H
 
-#include "planner_interface.h"
+#include "roi_viewpoint_planner/planner_interface.h"
 
 #include <ros/ros.h>
 #include <dynamic_reconfigure/client.h>

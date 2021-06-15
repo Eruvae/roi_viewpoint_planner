@@ -4,6 +4,9 @@
 #include <ros/ros.h>
 #include <moveit/move_group_interface/move_group_interface.h>
 
+namespace roi_viewpoint_planner
+{
+
 static double doubleVecDiff(const std::vector<double> &v1, const std::vector<double> &v2)
 {
   double res = 0;
@@ -31,5 +34,7 @@ inline static double getTrajectoryDuration(const moveit::planning_interface::Mov
 {
   return plan.trajectory_.joint_trajectory.points.back().time_from_start.toSec();
 }
+
+} // namespace roi_viewpoint_planner
 
 #endif // RVP_UTILS_H

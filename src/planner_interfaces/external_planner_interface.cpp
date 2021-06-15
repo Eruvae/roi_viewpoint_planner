@@ -1,4 +1,4 @@
-#include "planner_interfaces/external_planner_interface.h"
+#include "roi_viewpoint_planner/planner_interfaces/external_planner_interface.h"
 
 #include <roi_viewpoint_planner_msgs/SaveOctomap.h>
 #include <std_srvs/Trigger.h>

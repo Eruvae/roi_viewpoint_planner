@@ -29,11 +29,11 @@
 #include <dynamic_reconfigure/server.h>
 #include <std_srvs/Trigger.h>
 #include <roi_viewpoint_planner_msgs/SaveOctomap.h>
-#include "roi_viewpoint_planner_msgs/EvaluatorConfig.h"
-#include "compute_cubes.h"
-#include "point_cloud_color_handler_clusters.h"
-#include "planner_interface.h"
-#include "gt_octree_loader.h"
+#include <roi_viewpoint_planner_msgs/EvaluatorConfig.h>
+#include "roi_viewpoint_planner/compute_cubes.h"
+#include "roi_viewpoint_planner/point_cloud_color_handler_clusters.h"
+#include "roi_viewpoint_planner/planner_interface.h"
+#include "roi_viewpoint_planner/gt_octree_loader.h"
 #include <octomap_vpp/NearestRegionOcTree.h>
 #include <pcl/io/pcd_io.h>
 

@@ -56,14 +56,14 @@ namespace std {
 #include <octomap_vpp/roioctree_utils.h>
 
 #include <roi_viewpoint_planner_msgs/PlannerState.h>
-#include "rvp_types.h"
-#include "compute_cubes.h"
-#include "viewpoint_samplers.h"
-#include "viewpoint_utilities.h"
-#include "evaluator.h"
-#include "planner_interfaces/direct_planner_interface.h"
+#include "roi_viewpoint_planner/rvp_types.h"
+#include "roi_viewpoint_planner/compute_cubes.h"
+#include "roi_viewpoint_planner/viewpoint_samplers.h"
+#include "roi_viewpoint_planner/viewpoint_utilities.h"
+#include "roi_viewpoint_planner/evaluator.h"
+#include "roi_viewpoint_planner/planner_interfaces/direct_planner_interface.h"
 
-#include "time_logger.h"
+#include "roi_viewpoint_planner/time_logger.h"
 
 //#define PUBLISH_PLANNING_TIMES
 
@@ -256,7 +256,7 @@ public:
   // Planner parameters end
 
   ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, const std::string &wstree_file, const std::string &sampling_tree_file, double tree_resolution,
-                   const std::string &map_frame, const std::string &ws_frame);
+                   const std::string &map_frame, const std::string &ws_frame, bool update_planning_tree=true, bool initialize_evaluator=true);
 
   ~ViewpointPlanner();
 
@@ -388,6 +388,8 @@ public:
   void resetOctomap();
 
   void plannerLoop();
+
+  void plannerLoopOnce();
 };
 
 } // namespace roi_viewpoint_planner

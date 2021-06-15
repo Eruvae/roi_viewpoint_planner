@@ -83,6 +83,15 @@ public:
     return fruit_cell_counts;
   }
 
+  size_t getTotalFruitCellCount()
+  {
+    size_t total_count = 0;
+    for (size_t count : fruit_cell_counts)
+      total_count += count;
+
+    return total_count;
+  }
+
   size_t getNumFruits()
   {
     return fruit_cell_counts.size();

@@ -1,20 +1,17 @@
 ﻿#include <ros/ros.h>
 #include <ros/package.h>
 
-#include "viewpoint_planner.h"
-#include "roi_viewpoint_planner_msgs/SaveOctomap.h"
-#include "roi_viewpoint_planner_msgs/MoveToState.h"
-#include "roi_viewpoint_planner_msgs/LoadOctomap.h"
-#include "roi_viewpoint_planner_msgs/StartEvaluator.h"
+#include "roi_viewpoint_planner/viewpoint_planner.h"
+#include <roi_viewpoint_planner_msgs/SaveOctomap.h>
+#include <roi_viewpoint_planner_msgs/MoveToState.h>
+#include <roi_viewpoint_planner_msgs/LoadOctomap.h>
+#include <roi_viewpoint_planner_msgs/StartEvaluator.h>
 #include <std_srvs/Trigger.h>
 #include <std_srvs/Empty.h>
 #include <boost/algorithm/string/predicate.hpp>
 
 #include <dynamic_reconfigure/server.h>
 #include "roi_viewpoint_planner_msgs/PlannerConfig.h"
-
-#include "octomap_vpp/marching_cubes.h"
-//#include "trolley_remote/trolley_remote.h"
 
 using namespace roi_viewpoint_planner;
 
@@ -217,8 +214,10 @@ int main(int argc, char **argv)
   std::string sampling_tree_file = nhp.param<std::string>("sampling_tree", wstree_default_package + "/workspace_trees/ur_retractable/inflated_workspace_map.ot");
   std::string map_frame = nhp.param<std::string>("map_frame", "world");
   std::string ws_frame = nhp.param<std::string>("ws_frame", "arm_base_link");
+  bool update_planning_tree = nhp.param<bool>("update_planning_tree", true);
+  bool initialize_evaluator = nhp.param<bool>("initialize_evaluator", true);
 
-  planner = new ViewpointPlanner(nh, nhp, wstree_file, sampling_tree_file, tree_resolution, map_frame, ws_frame);
+  planner = new ViewpointPlanner(nh, nhp, wstree_file, sampling_tree_file, tree_resolution, map_frame, ws_frame, update_planning_tree, initialize_evaluator);
   ros::ServiceServer saveTreeAsObjService = nhp.advertiseService("save_tree_as_obj", saveTreeAsObj);
   ros::ServiceServer saveOctomapService = nhp.advertiseService("save_octomap", saveOctomap);
   ros::ServiceServer loadOctomapService = nhp.advertiseService("load_octomap", loadOctomap);

@@ -1,7 +1,7 @@
 #ifndef VIEWPOINT_UTILITIES_H
 #define VIEWPOINT_UTILITIES_H
 
-#include "rvp_types.h"
+#include "roi_viewpoint_planner/rvp_types.h"
 #include <tf2/LinearMath/Quaternion.h>
 #include <octomap/OcTreeKey.h>
 #include <octomap_vpp/InflatedRoiOcTree.h>

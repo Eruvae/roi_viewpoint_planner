@@ -1,20 +1,20 @@
-#include "viewpoint_planner.h"
+#include "roi_viewpoint_planner/viewpoint_planner.h"
 
 #include <std_msgs/Bool.h>
 #include <std_srvs/Trigger.h>
 #include <roi_viewpoint_planner_msgs/GetGradient.h>
 #include <roi_viewpoint_planner_msgs/ViewpointList.h>
-#include "octomap_vpp/marching_cubes.h"
-#include "octomap_vpp/octomap_transforms.h"
-#include "boost/date_time/posix_time/posix_time.hpp"
-#include "planner_interfaces/direct_planner_interface.h"
-#include "rvp_utils.h"
+#include <octomap_vpp/marching_cubes.h>
+#include <octomap_vpp/octomap_transforms.h>
+#include <boost/date_time/posix_time/posix_time.hpp>
+#include "roi_viewpoint_planner/planner_interfaces/direct_planner_interface.h"
+#include "roi_viewpoint_planner/rvp_utils.h"
 
 namespace roi_viewpoint_planner
 {
 
 ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, const std::string &wstree_file, const std::string &sampling_tree_file, double tree_resolution,
-                                   const std::string &map_frame, const std::string &ws_frame) :
+                                   const std::string &map_frame, const std::string &ws_frame, bool update_planning_tree, bool initialize_evaluator) :
   nh(nh), nhp(nhp),
   planningTree(new octomap_vpp::RoiOcTree(tree_resolution)),
   map_frame(map_frame),
@@ -173,14 +173,6 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, co
     }
   }
 
-  //depthCloudSub.registerCallback(&ViewpointPlanner::registerNewScan, this);
-  //tfCloudFilter.registerCallback(&ViewpointPlanner::registerNewScan, this);
-  //cloudCache.registerCallback(&ViewpointPlanner::registerNewScan, this);
-
-  //syncDets.registerCallback(registerRoi);
-
-  roiSub = nh.subscribe("/detect_roi/results", 1, &ViewpointPlanner::registerPointcloudWithRoi, this);
-
   if (workspaceTree)
   {
     manipulator_group.setWorkspace(wsMin.x(), wsMin.y(), wsMin.z(), wsMax.x(), wsMax.y(), wsMax.z());
@@ -201,9 +193,15 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, co
     cubeVisPub.publish(ws_cube);
   }
 
-  ros::NodeHandle nh_eval("evaluator");
-  initializeEvaluator(nh, nh_eval);
-  evaluator->saveGtAsColoredCloud();
+  if (update_planning_tree)
+    roiSub = nh.subscribe("/detect_roi/results", 1, &ViewpointPlanner::registerPointcloudWithRoi, this);
+
+  if (initialize_evaluator)
+  {
+    ros::NodeHandle nh_eval("evaluator");
+    initializeEvaluator(nh, nh_eval);
+    evaluator->saveGtAsColoredCloud();
+  }
 }
 
 ViewpointPlanner::~ViewpointPlanner()
@@ -2047,227 +2045,232 @@ void ViewpointPlanner::resetOctomap()
 
 void ViewpointPlanner::plannerLoop()
 {
-  for (ros::Rate rate(100); ros::ok(); timeLogger.endLoop(), rate.sleep())
+  for (ros::Rate rate(100); ros::ok(); rate.sleep())
   {
-    timeLogger.startLoop();
+    plannerLoopOnce();
+  }
+}
 
-    /*std::vector<double> mg_joint_values = manipulator_group.getCurrentJointValues();
-    kinematic_state->setJointGroupPositions(joint_model_group, mg_joint_values);
-    kinematic_state->setToRandomPositionsNearBy(joint_model_group, *kinematic_state, 0.2);
-    const Eigen::Affine3d& stateTf = kinematic_state->getGlobalLinkTransform("camera_link");
-    auto translation = stateTf.translation();
-    auto quaternion = Eigen::Quaterniond(stateTf.linear()).coeffs();
-    octomap::pose6d viewpoint(octomap::point3d(translation[0], translation[1], translation[2]), octomath::Quaternion(quaternion[0], quaternion[1], quaternion[2], quaternion[3]));*/
+void ViewpointPlanner::plannerLoopOnce()
+{
+  timeLogger.startLoop();
 
-    if (mode == IDLE || (wait_for_scan && !scanInserted.load()))
-      continue;
+  if (mode == IDLE || (wait_for_scan && !scanInserted.load()))
+  {
+    timeLogger.endLoop();
+    return;
+  }
 
-    publishMap();
+  publishMap();
 
-    timeLogger.saveTime(TimeLogger::MAP_PUBLISHED);
+  timeLogger.saveTime(TimeLogger::MAP_PUBLISHED);
 
-    if (mode == MAP_ONLY)
-      continue;
+  if (mode == MAP_ONLY)
+  {
+    timeLogger.endLoop();
+    return;
+  }
 
-    /*tree_mtx.lock();
-    ros::Time vpEvalStart = ros::Time::now();
-    double value = testTree.computeViewpointValue(viewpoint, 80.0 * M_PI / 180.0, 8, 6, 5.0);
-    double value_no_weighting = testTree.computeViewpointValue(viewpoint, 80.0 * M_PI / 180.0, 8, 6, 5.0, false) / 2;
-    ros::Time vpEvalDone = ros::Time::now();
-    tree_mtx.unlock();
+  geometry_msgs::TransformStamped camFrameTf;
 
-    ROS_INFO_STREAM("Viewpoint value: " << value << " / " << value_no_weighting << "; Computation time: " << (vpEvalDone - vpEvalStart));*/
+  try
+  {
+    camFrameTf = tfBuffer.lookupTransform(map_frame, "camera_link", ros::Time(0));
+  }
+  catch (const tf2::TransformException &e)
+  {
+    ROS_ERROR_STREAM("Couldn't find transform to map frame in plannerLoop: " << e.what());
+    timeLogger.endLoop();
+    return;
+  }
 
-    /*std::vector<double> mg_joint_values = manipulator_group.getCurrentJointValues();
-    kinematic_state->setJointGroupPositions(joint_model_group, mg_joint_values);
-    kinematic_state = sampleNextRobotState(joint_model_group, *kinematic_state);
-    moveToState(manipulator_group, *kinematic_state);*/
+  const geometry_msgs::Vector3 &camOrigTf = camFrameTf.transform.translation;
+  octomap::point3d camOrig(camOrigTf.x, camOrigTf.y, camOrigTf.z);
+  octomap::point3d box_min(camOrig.x() - 0.5, camOrig.y() - 0.5, camOrig.z() - 0.5);
+  octomap::point3d box_max(camOrig.x() + 0.5, camOrig.y() + 0.5, camOrig.z() + 0.5);
+  //getBorderPoints(box_min, box_max);
 
-    geometry_msgs::TransformStamped camFrameTf;
+  tf2::Quaternion camQuat;
+  tf2::fromMsg(camFrameTf.transform.rotation, camQuat);
 
-    try
+  timeLogger.saveTime(TimeLogger::CAM_POS_COMPUTED);
+
+  if (activate_move_to_see && loop_state == M2S)
+  {
+    bool m2s_success = false;
+    roi_viewpoint_planner_msgs::GetGradient gradSrv;
+    if (moveToSeeClient.call(gradSrv))
     {
-      camFrameTf = tfBuffer.lookupTransform(map_frame, "camera_link", ros::Time(0));
-    }
-    catch (const tf2::TransformException &e)
-    {
-      ROS_ERROR_STREAM("Couldn't find transform to map frame in plannerLoop: " << e.what());
-      continue;
-    }
+      const auto &resp = gradSrv.response;
+      ROS_INFO_STREAM("Gradient: " << resp.gradient.position.x << ", " << resp.gradient.position.y << ", " << resp.gradient.position.z);
+      ROS_INFO_STREAM("Delta: " << resp.delta);
 
-    const geometry_msgs::Vector3 &camOrigTf = camFrameTf.transform.translation;
-    octomap::point3d camOrig(camOrigTf.x, camOrigTf.y, camOrigTf.z);
-    octomap::point3d box_min(camOrig.x() - 0.5, camOrig.y() - 0.5, camOrig.z() - 0.5);
-    octomap::point3d box_max(camOrig.x() + 0.5, camOrig.y() + 0.5, camOrig.z() + 0.5);
-    //getBorderPoints(box_min, box_max);
-
-    tf2::Quaternion camQuat;
-    tf2::fromMsg(camFrameTf.transform.rotation, camQuat);
-
-    timeLogger.saveTime(TimeLogger::CAM_POS_COMPUTED);
-
-    if (activate_move_to_see && loop_state == M2S)
-    {
-      bool m2s_success = false;
-      roi_viewpoint_planner_msgs::GetGradient gradSrv;
-      if (moveToSeeClient.call(gradSrv))
+      if (resp.delta > m2s_delta_thresh)
       {
-        const auto &resp = gradSrv.response;
-        ROS_INFO_STREAM("Gradient: " << resp.gradient.position.x << ", " << resp.gradient.position.y << ", " << resp.gradient.position.z);
-        ROS_INFO_STREAM("Delta: " << resp.delta);
+          geometry_msgs::Pose commandPose;
+          tf2::Quaternion q_rot;
+          tf2::fromMsg(resp.gradient.orientation, q_rot);
+          tf2::Quaternion q_new = q_rot * camQuat;
+          q_new.normalize();
 
-        if (resp.delta > m2s_delta_thresh)
-        {
-            geometry_msgs::Pose commandPose;
-            tf2::Quaternion q_rot;
-            tf2::fromMsg(resp.gradient.orientation, q_rot);
-            tf2::Quaternion q_new = q_rot * camQuat;
-            q_new.normalize();
+          commandPose.position.x = camFrameTf.transform.translation.x + resp.gradient.position.x;
+          commandPose.position.y = camFrameTf.transform.translation.y + resp.gradient.position.y;
+          commandPose.position.z = camFrameTf.transform.translation.z + resp.gradient.position.z;
+          commandPose.orientation = tf2::toMsg(q_new);
 
-            commandPose.position.x = camFrameTf.transform.translation.x + resp.gradient.position.x;
-            commandPose.position.y = camFrameTf.transform.translation.y + resp.gradient.position.y;
-            commandPose.position.z = camFrameTf.transform.translation.z + resp.gradient.position.z;
-            commandPose.orientation = tf2::toMsg(q_new);
-
-            eval_lastStep = "M2S";
-            timeLogger.saveTime(TimeLogger::MOVE_TO_SEE_APPLIED);
-            if (execute_plan && moveToPose(transformToWorkspace(commandPose)))
-            {
-              ROS_INFO_STREAM("Succesfully moving with move to see");
-              m2s_success = true;
-              m2s_current_steps++;
-            }
-        }
-        else
-        {
+          eval_lastStep = "M2S";
           timeLogger.saveTime(TimeLogger::MOVE_TO_SEE_APPLIED);
-        }
+          if (execute_plan && moveToPose(transformToWorkspace(commandPose)))
+          {
+            ROS_INFO_STREAM("Succesfully moving with move to see");
+            m2s_success = true;
+            m2s_current_steps++;
+          }
       }
       else
       {
-        ROS_INFO_STREAM("Move to see service not found");
+        timeLogger.saveTime(TimeLogger::MOVE_TO_SEE_APPLIED);
       }
-      if (!m2s_success || m2s_current_steps >= m2s_max_steps)
+    }
+    else
+    {
+      ROS_INFO_STREAM("Move to see service not found");
+    }
+    if (!m2s_success || m2s_current_steps >= m2s_max_steps)
+    {
+      if (!move_to_see_exclusive)
+        loop_state = NORMAL;
+
+      m2s_current_steps = 0;
+    }
+    timeLogger.endLoop();
+    return;
+  }
+
+  std::vector<Viewpoint> roiSamplingVps, explSamplingVps;
+  auto vpComp = [](const Viewpoint &a, const Viewpoint &b)
+  {
+    //return a.distance > b.distance;
+    return a.utility < b.utility;
+  };
+
+  // ROI sampling
+  if (mode == SAMPLE_ROI_CONTOURS || (mode == SAMPLE_AUTOMATIC && roi_sample_mode == SAMPLE_ROI_CONTOURS))
+  {
+    std::unique_ptr<SamplerBase> sampler = createSampler(SamplerType::ROI_CONTOUR_SAMPLER, this, camOrig, camQuat, roiMaxSamples, roiUtil);
+    roiSamplingVps = sampler->sampleViewpoints();
+    std::make_heap(roiSamplingVps.begin(), roiSamplingVps.end(), vpComp);
+    publishViewpointVisualizations(roiSamplingVps, "roiContourPoints", COLOR_ORANGE);
+    if (record_viewpoints)
+      saveViewpointsToBag(roiSamplingVps, "roiContourPoints", ros::Time::now());
+  }
+  else if (mode == SAMPLE_ROI_ADJACENT || (mode == SAMPLE_AUTOMATIC && roi_sample_mode == SAMPLE_ROI_ADJACENT))
+  {
+    std::unique_ptr<SamplerBase> sampler = createSampler(SamplerType::ROI_ADJACENT_SAMPLER, this, camOrig, camQuat, roiMaxSamples, roiUtil);
+    roiSamplingVps = sampler->sampleViewpoints();
+    std::make_heap(roiSamplingVps.begin(), roiSamplingVps.end(), vpComp);
+    publishViewpointVisualizations(roiSamplingVps, "roiAdjPoints", COLOR_RED);
+    if (record_viewpoints)
+      saveViewpointsToBag(roiSamplingVps, "roiAdjPoints", ros::Time::now());
+  }
+  else if (mode == SAMPLE_ROI_CENTERS || (mode == SAMPLE_AUTOMATIC && roi_sample_mode == SAMPLE_ROI_CENTERS))
+  {
+    std::unique_ptr<SamplerBase> sampler = createSampler(SamplerType::ROI_CENTER_SAMPLER, this, camOrig, camQuat, roiMaxSamples, roiUtil);
+    roiSamplingVps = sampler->sampleViewpoints();
+    std::make_heap(roiSamplingVps.begin(), roiSamplingVps.end(), vpComp);
+    publishViewpointVisualizations(roiSamplingVps, "roiPoints", COLOR_BROWN);
+    if (record_viewpoints)
+      saveViewpointsToBag(roiSamplingVps, "roiPoints", ros::Time::now());
+  }
+
+  if (mode == SAMPLE_CONTOURS || (mode == SAMPLE_AUTOMATIC && expl_sample_mode == SAMPLE_CONTOURS))
+  {
+    std::unique_ptr<SamplerBase> sampler = createSampler(SamplerType::CONTOUR_SAMPLER, this, camOrig, camQuat, explMaxSamples, explUtil);
+    explSamplingVps = sampler->sampleViewpoints();
+    std::make_heap(explSamplingVps.begin(), explSamplingVps.end(), vpComp);
+    publishViewpointVisualizations(explSamplingVps, "contourPoints", COLOR_GREEN);
+    if (record_viewpoints)
+      saveViewpointsToBag(explSamplingVps, "contourPoints", ros::Time::now());
+  }
+  else if (mode == SAMPLE_BORDER || (mode == SAMPLE_AUTOMATIC && expl_sample_mode == SAMPLE_BORDER))
+  {
+    std::unique_ptr<SamplerBase> sampler = createSampler(SamplerType::BORDER_SAMPLER, this, camOrig, camQuat, explMaxSamples, explUtil);
+    explSamplingVps = sampler->sampleViewpoints();
+    std::make_heap(explSamplingVps.begin(), explSamplingVps.end(), vpComp);
+    publishViewpointVisualizations(explSamplingVps, "borderPoints", COLOR_BLUE);
+    if (record_viewpoints)
+      saveViewpointsToBag(explSamplingVps, "borderPoints", ros::Time::now());
+  }
+  else if (mode == SAMPLE_EXPLORATION || (mode == SAMPLE_AUTOMATIC && expl_sample_mode == SAMPLE_EXPLORATION))
+  {
+    std::unique_ptr<SamplerBase> sampler = createSampler(SamplerType::EXPLORATION_SAMPLER, this, camOrig, camQuat, explMaxSamples, explUtil);
+    explSamplingVps = sampler->sampleViewpoints();
+    std::make_heap(explSamplingVps.begin(), explSamplingVps.end(), vpComp);
+    publishViewpointVisualizations(explSamplingVps, "explorationPoints", COLOR_VIOLET);
+    if (record_viewpoints)
+      saveViewpointsToBag(explSamplingVps, "explorationPoints", ros::Time::now());
+  }
+
+  timeLogger.saveTime(TimeLogger::VIEWPOINTS_SAMPLED);
+
+  //std::make_heap(roiViewpoints.begin(), roiViewpoints.end(), vpComp);
+  //std::make_heap(borderVps.begin(), borderVps.end(), vpComp);
+  //std::make_heap(contourVps.begin(), contourVps.end(), vpComp);
+
+  if (!execute_plan)
+  {
+    timeLogger.endLoop();
+    return;
+  }
+
+  std::vector<Viewpoint> &nextViewpoints = [&]() -> std::vector<Viewpoint>&
+  {
+    if (mode == SAMPLE_ROI_CENTERS || mode == SAMPLE_ROI_CONTOURS || mode == SAMPLE_ROI_ADJACENT) return roiSamplingVps;
+    else if (mode == SAMPLE_CONTOURS || mode == SAMPLE_ROI_ADJACENT || mode == SAMPLE_EXPLORATION) return explSamplingVps;
+
+    if (roiSamplingVps.size() > 0 && roiSamplingVps.front().utility > 0.2)
+    {
+      ROS_INFO_STREAM("Using ROI viewpoint targeting");
+      eval_lastStep = "ROI sampling";
+      return roiSamplingVps;
+    }
+    else// if (!contourVps.empty())
+    {
+      ROS_INFO_STREAM("Using exploration viewpoints");
+      eval_lastStep = "Expl sampling";
+      return explSamplingVps;
+    }
+    /*else
+    {
+      ROS_INFO_STREAM("Using border viewpoints");
+      return borderVps;
+    }*/
+  }();
+
+  timeLogger.saveTime(TimeLogger::VIEWPOINTS_SELECTED);
+
+  bool move_success = false;
+  for (/*std::make_heap(nextViewpoints.begin(), nextViewpoints.end(), vpComp)*/; !nextViewpoints.empty(); std::pop_heap(nextViewpoints.begin(), nextViewpoints.end(), vpComp), nextViewpoints.pop_back())
+  {
+    const Viewpoint &vp = nextViewpoints.front();
+    /*if (vp.utility <= 0)
+    {
+      ROS_INFO_STREAM("No viewpoint with sufficient utility found.");
+      break;
+    }*/
+    if (use_cartesian_motion)
+    {
+      if (moveToPoseCartesian(transformToWorkspace(vp.pose)))
       {
-        if (!move_to_see_exclusive)
-          loop_state = NORMAL;
-
-        m2s_current_steps = 0;
-      }
-      continue;
-    }
-
-    std::vector<Viewpoint> roiSamplingVps, explSamplingVps;
-    auto vpComp = [](const Viewpoint &a, const Viewpoint &b)
-    {
-      //return a.distance > b.distance;
-      return a.utility < b.utility;
-    };
-
-    // ROI sampling
-    if (mode == SAMPLE_ROI_CONTOURS || (mode == SAMPLE_AUTOMATIC && roi_sample_mode == SAMPLE_ROI_CONTOURS))
-    {
-      std::unique_ptr<SamplerBase> sampler = createSampler(SamplerType::ROI_CONTOUR_SAMPLER, this, camOrig, camQuat, roiMaxSamples, roiUtil);
-      roiSamplingVps = sampler->sampleViewpoints();
-      std::make_heap(roiSamplingVps.begin(), roiSamplingVps.end(), vpComp);
-      publishViewpointVisualizations(roiSamplingVps, "roiContourPoints", COLOR_ORANGE);
-      if (record_viewpoints)
-        saveViewpointsToBag(roiSamplingVps, "roiContourPoints", ros::Time::now());
-    }
-    else if (mode == SAMPLE_ROI_ADJACENT || (mode == SAMPLE_AUTOMATIC && roi_sample_mode == SAMPLE_ROI_ADJACENT))
-    {
-      std::unique_ptr<SamplerBase> sampler = createSampler(SamplerType::ROI_ADJACENT_SAMPLER, this, camOrig, camQuat, roiMaxSamples, roiUtil);
-      roiSamplingVps = sampler->sampleViewpoints();
-      std::make_heap(roiSamplingVps.begin(), roiSamplingVps.end(), vpComp);
-      publishViewpointVisualizations(roiSamplingVps, "roiAdjPoints", COLOR_RED);
-      if (record_viewpoints)
-        saveViewpointsToBag(roiSamplingVps, "roiAdjPoints", ros::Time::now());
-    }
-    else if (mode == SAMPLE_ROI_CENTERS || (mode == SAMPLE_AUTOMATIC && roi_sample_mode == SAMPLE_ROI_CENTERS))
-    {
-      std::unique_ptr<SamplerBase> sampler = createSampler(SamplerType::ROI_CENTER_SAMPLER, this, camOrig, camQuat, roiMaxSamples, roiUtil);
-      roiSamplingVps = sampler->sampleViewpoints();
-      std::make_heap(roiSamplingVps.begin(), roiSamplingVps.end(), vpComp);
-      publishViewpointVisualizations(roiSamplingVps, "roiPoints", COLOR_BROWN);
-      if (record_viewpoints)
-        saveViewpointsToBag(roiSamplingVps, "roiPoints", ros::Time::now());
-    }
-
-    if (mode == SAMPLE_CONTOURS || (mode == SAMPLE_AUTOMATIC && expl_sample_mode == SAMPLE_CONTOURS))
-    {
-      std::unique_ptr<SamplerBase> sampler = createSampler(SamplerType::CONTOUR_SAMPLER, this, camOrig, camQuat, explMaxSamples, explUtil);
-      explSamplingVps = sampler->sampleViewpoints();
-      std::make_heap(explSamplingVps.begin(), explSamplingVps.end(), vpComp);
-      publishViewpointVisualizations(explSamplingVps, "contourPoints", COLOR_GREEN);
-      if (record_viewpoints)
-        saveViewpointsToBag(explSamplingVps, "contourPoints", ros::Time::now());
-    }
-    else if (mode == SAMPLE_BORDER || (mode == SAMPLE_AUTOMATIC && expl_sample_mode == SAMPLE_BORDER))
-    {
-      std::unique_ptr<SamplerBase> sampler = createSampler(SamplerType::BORDER_SAMPLER, this, camOrig, camQuat, explMaxSamples, explUtil);
-      explSamplingVps = sampler->sampleViewpoints();
-      std::make_heap(explSamplingVps.begin(), explSamplingVps.end(), vpComp);
-      publishViewpointVisualizations(explSamplingVps, "borderPoints", COLOR_BLUE);
-      if (record_viewpoints)
-        saveViewpointsToBag(explSamplingVps, "borderPoints", ros::Time::now());
-    }
-    else if (mode == SAMPLE_EXPLORATION || (mode == SAMPLE_AUTOMATIC && expl_sample_mode == SAMPLE_EXPLORATION))
-    {
-      std::unique_ptr<SamplerBase> sampler = createSampler(SamplerType::EXPLORATION_SAMPLER, this, camOrig, camQuat, explMaxSamples, explUtil);
-      explSamplingVps = sampler->sampleViewpoints();
-      std::make_heap(explSamplingVps.begin(), explSamplingVps.end(), vpComp);
-      publishViewpointVisualizations(explSamplingVps, "explorationPoints", COLOR_VIOLET);
-      if (record_viewpoints)
-        saveViewpointsToBag(explSamplingVps, "explorationPoints", ros::Time::now());
-    }
-
-    timeLogger.saveTime(TimeLogger::VIEWPOINTS_SAMPLED);
-
-    //std::make_heap(roiViewpoints.begin(), roiViewpoints.end(), vpComp);
-    //std::make_heap(borderVps.begin(), borderVps.end(), vpComp);
-    //std::make_heap(contourVps.begin(), contourVps.end(), vpComp);
-
-    if (!execute_plan)
-      continue;
-
-    std::vector<Viewpoint> &nextViewpoints = [&]() -> std::vector<Viewpoint>&
-    {
-      if (mode == SAMPLE_ROI_CENTERS || mode == SAMPLE_ROI_CONTOURS || mode == SAMPLE_ROI_ADJACENT) return roiSamplingVps;
-      else if (mode == SAMPLE_CONTOURS || mode == SAMPLE_ROI_ADJACENT || mode == SAMPLE_EXPLORATION) return explSamplingVps;
-
-      if (roiSamplingVps.size() > 0 && roiSamplingVps.front().utility > 0.2)
-      {
-        ROS_INFO_STREAM("Using ROI viewpoint targeting");
-        eval_lastStep = "ROI sampling";
-        return roiSamplingVps;
-      }
-      else// if (!contourVps.empty())
-      {
-        ROS_INFO_STREAM("Using exploration viewpoints");
-        eval_lastStep = "Expl sampling";
-        return explSamplingVps;
-      }
-      /*else
-      {
-        ROS_INFO_STREAM("Using border viewpoints");
-        return borderVps;
-      }*/
-    }();
-
-    timeLogger.saveTime(TimeLogger::VIEWPOINTS_SELECTED);
-
-    bool move_success = false;
-    for (/*std::make_heap(nextViewpoints.begin(), nextViewpoints.end(), vpComp)*/; !nextViewpoints.empty(); std::pop_heap(nextViewpoints.begin(), nextViewpoints.end(), vpComp), nextViewpoints.pop_back())
-    {
-      const Viewpoint &vp = nextViewpoints.front();
-      /*if (vp.utility <= 0)
-      {
-        ROS_INFO_STREAM("No viewpoint with sufficient utility found.");
+        move_success = true;
         break;
-      }*/
-      if (use_cartesian_motion)
+      }
+    }
+    else
+    {
+      if (compute_ik_when_sampling)
       {
-        if (moveToPoseCartesian(transformToWorkspace(vp.pose)))
+        if (moveToState(vp.joint_target))
         {
           move_success = true;
           break;
@@ -2275,30 +2278,20 @@ void ViewpointPlanner::plannerLoop()
       }
       else
       {
-        if (compute_ik_when_sampling)
+        if (moveToPose(transformToWorkspace(vp.pose)))
         {
-          if (moveToState(vp.joint_target))
-          {
-            move_success = true;
-            break;
-          }
-        }
-        else
-        {
-          if (moveToPose(transformToWorkspace(vp.pose)))
-          {
-            move_success = true;
-            break;
-          }
+          move_success = true;
+          break;
         }
       }
     }
-    if (move_success && activate_move_to_see)
-    {
-        loop_state = M2S;
-        m2s_current_steps = 0;
-    }
   }
+  if (move_success && activate_move_to_see)
+  {
+      loop_state = M2S;
+      m2s_current_steps = 0;
+  }
+  timeLogger.endLoop();
 }
 
 

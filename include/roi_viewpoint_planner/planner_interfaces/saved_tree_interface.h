@@ -1,7 +1,7 @@
 #ifndef SAVED_TREE_INTERFACE_H
 #define SAVED_TREE_INTERFACE_H
 
-#include "planner_interface.h"
+#include "roi_viewpoint_planner/planner_interface.h"
 
 namespace roi_viewpoint_planner
 {

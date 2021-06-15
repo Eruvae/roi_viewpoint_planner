@@ -1,7 +1,7 @@
 #include <ros/ros.h>
-#include "evaluator.h"
+#include "roi_viewpoint_planner/evaluator.h"
 
-#include "planner_interfaces/saved_tree_interface.h"
+#include "roi_viewpoint_planner/planner_interfaces/saved_tree_interface.h"
 
 using namespace roi_viewpoint_planner;
 

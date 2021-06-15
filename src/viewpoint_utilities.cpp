@@ -1,6 +1,6 @@
-#include "viewpoint_utilities.h"
-#include "viewpoint_samplers.h"
-#include "viewpoint_planner.h"
+#include "roi_viewpoint_planner/viewpoint_utilities.h"
+#include "roi_viewpoint_planner/viewpoint_samplers.h"
+#include "roi_viewpoint_planner/viewpoint_planner.h"
 
 namespace roi_viewpoint_planner
 {

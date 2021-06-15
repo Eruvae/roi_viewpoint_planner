@@ -10,8 +10,8 @@
 #include <octomap_vpp/RoiOcTree.h>
 #include <octomap_vpp/WorkspaceOcTree.h>
 
-#include "rvp_types.h"
-#include "viewpoint_utilities.h"
+#include "roi_viewpoint_planner/rvp_types.h"
+#include "roi_viewpoint_planner/viewpoint_utilities.h"
 
 namespace roi_viewpoint_planner {
 

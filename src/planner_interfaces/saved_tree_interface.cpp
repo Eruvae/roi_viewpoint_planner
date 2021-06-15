@@ -1,4 +1,4 @@
-#include "planner_interfaces/saved_tree_interface.h"
+#include "roi_viewpoint_planner/planner_interfaces/saved_tree_interface.h"
 #include <octomap/AbstractOcTree.h>
 
 namespace roi_viewpoint_planner

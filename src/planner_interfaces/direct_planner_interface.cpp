@@ -1,5 +1,5 @@
-#include "planner_interfaces/direct_planner_interface.h"
-#include "viewpoint_planner.h"
+#include "roi_viewpoint_planner/planner_interfaces/direct_planner_interface.h"
+#include "roi_viewpoint_planner/viewpoint_planner.h"
 
 namespace roi_viewpoint_planner
 {
