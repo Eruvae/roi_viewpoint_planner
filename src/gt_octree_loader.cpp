@@ -1,7 +1,10 @@
 #include "roi_viewpoint_planner/gt_octree_loader.h"
 #include <yaml-cpp/yaml.h>
+#include <gazebo_msgs/ModelStates.h>
+#include <boost/algorithm/string.hpp>
 
-namespace YAML {
+namespace YAML
+{
 template<>
 struct convert<octomap::point3d> {
   static Node encode(const octomap::point3d& rhs) {
@@ -23,7 +26,10 @@ struct convert<octomap::point3d> {
     return true;
   }
 };
-}
+} // namespace YAML
+
+namespace roi_viewpoint_planner
+{
 
 GtOctreeLoader::GtOctreeLoader(const std::string &world_name, double resolution) : package_path(ros::package::getPath("roi_viewpoint_planner")),
   final_fruit_trees(new std::vector<octomap::OcTree>), indexed_fruit_tree(new octomap_vpp::CountingOcTree(resolution)),
@@ -35,15 +41,15 @@ GtOctreeLoader::GtOctreeLoader(const std::string &world_name, double resolution)
   ROS_INFO_STREAM("Resolution str: " << resolution_str);
 
   loadPlantTrees("VG07_6", resolution_str, 7);
+  readPlantPoses();
 
   const octomap::OcTreeKey ZERO_KEY = indexed_fruit_tree->coordToKey(0, 0, 0);
 
-  YAML::Node plant_list = YAML::LoadFile(package_path + "/cfg/world_plant_locations/" + world_name + "_plants.yaml");
   unsigned int fruit_index = 1;
-  for (const YAML::Node &plant : plant_list)
+  for (const PlantInfo &plant : plant_list)
   {
-    octomap::point3d loc = plant["location"].as<octomap::point3d>();
-    std::string model = plant["model"].as<std::string>();
+    const std::string &model = plant.model;
+    octomap::point3d loc(plant.pose.position.x, plant.pose.position.y, plant.pose.position.z);
 
     auto it = plant_name_map.find(model);
     if (it == plant_name_map.end())
@@ -103,3 +109,32 @@ void GtOctreeLoader::loadPlantTrees(const std::string &name, const std::string &
   plant_fruit_keys.push_back(keys);
   plant_name_map.insert(std::make_pair(name, plant_fruit_keys.size() - 1));
 }
+
+void GtOctreeLoader::readPlantPoses()
+{
+  gazebo_msgs::ModelStatesConstPtr model_states = ros::topic::waitForMessage<gazebo_msgs::ModelStates>("/gazebo/model_states");
+  if (!model_states)
+  {
+    ROS_ERROR_STREAM("Model states message not received; could not read plant poses");
+    return;
+  }
+  plant_list.clear();
+  for (size_t i=0; i < model_states->name.size(); i++)
+  {
+    const std::string &name = model_states->name[i];
+    if (boost::algorithm::starts_with(name, "capsicum_plant_6_no_fruits"))
+    {
+      continue; // no fruits on plant
+    }
+    else if (boost::algorithm::starts_with(name, "capsicum_plant_6_one_fruit"))
+    {
+      continue; // one fruit plant; currently not supported
+    }
+    else if (boost::algorithm::starts_with(name, "capsicum_plant_6"))
+    {
+      plant_list.push_back(PlantInfo("VG07_6", model_states->pose[i]));
+    }
+  }
+}
+
+} // namespace roi_viewpoint_planner

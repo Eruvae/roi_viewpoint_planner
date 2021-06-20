@@ -3,8 +3,8 @@
 namespace roi_viewpoint_planner
 {
 
-Evaluator::Evaluator(std::shared_ptr<PlannerInterface> planner, ros::NodeHandle &nh, ros::NodeHandle &nhp, bool gt_comparison, bool use_pcl)
-  : planner(planner), gt_comparison(gt_comparison), use_pcl(use_pcl),
+Evaluator::Evaluator(std::shared_ptr<PlannerInterface> planner, ros::NodeHandle &nh, ros::NodeHandle &nhp, bool gt_comparison, bool use_pcl_visualizer, std::shared_ptr<GtOctreeLoader> gtLoader)
+  : planner(planner), gtLoader(gtLoader), gt_comparison(gt_comparison), use_pcl_visualizer(use_pcl_visualizer),
     viewer(nullptr), vp1(0), vp2(1), viewer_initialized(false), server(nhp),
     visualizeThread(&Evaluator::visualizeLoop, this)
 {
@@ -29,7 +29,7 @@ Evaluator::Evaluator(std::shared_ptr<PlannerInterface> planner, ros::NodeHandle 
     publishCubeVisualization(gt_pub, roi_locations, roi_sizes, COLOR_GREEN, "gt_rois");
   }
 
-  if (use_pcl)
+  if (use_pcl_visualizer)
   {
     while(!viewer_initialized.load())
     {
@@ -48,7 +48,8 @@ bool Evaluator::readGroundtruth()
   if (!gt_comparison)
     return false;
 
-  gtLoader.reset(new GtOctreeLoader(world_name, planner->getTreeResolution()));
+  if (gtLoader == nullptr)
+    gtLoader.reset(new GtOctreeLoader(world_name, planner->getTreeResolution()));
 
   octomap_msgs::Octomap fruit_ot_msg;
   fruit_ot_msg.header.frame_id = "world";
@@ -126,7 +127,7 @@ bool Evaluator::readGroundtruth()
 
 /*void Evaluator::computeGroundtruthPCL()
 {
-  if (!gt_comparison || !use_pcl)
+  if (!gt_comparison || !use_pcl_visualizer)
     return;
 
   gt_clusters.clear();
@@ -140,7 +141,7 @@ bool Evaluator::readGroundtruth()
 
 /*void Evaluator::computeDetectionsPCL()
 {
-  if (!use_pcl)
+  if (!use_pcl_visualizer)
     return;
 
   clusters.clear();
@@ -154,7 +155,7 @@ bool Evaluator::readGroundtruth()
 
 void Evaluator::updateVisualizerGroundtruth()
 {
-  if (!gt_comparison || !use_pcl)
+  if (!gt_comparison || !use_pcl_visualizer)
     return;
 
   gt_color_handler.reset(new pcl::visualization::PointCloudColorHandlerClusters<pcl::PointXYZ>(gt_pcl, *gt_clusters));
@@ -215,7 +216,7 @@ void Evaluator::reconfigureCallback(roi_viewpoint_planner::EvaluatorConfig &new_
 
   config = new_config;
 
-  if (use_pcl)
+  if (use_pcl_visualizer)
   {
     //computeGroundtruthPCL();
     //updateVisualizerGroundtruth();
@@ -226,7 +227,7 @@ void Evaluator::reconfigureCallback(roi_viewpoint_planner::EvaluatorConfig &new_
 
 void Evaluator::visualizeLoop()
 {
-  if (!use_pcl)
+  if (!use_pcl_visualizer)
     return;
 
   viewer_mtx.lock();
@@ -436,7 +437,7 @@ EvaluationParametersOld Evaluator::processDetectedRoisOld()
 
   //publishCubeVisualization(gt_pub, detected_locs, detected_sizes, COLOR_RED, "detected_rois");
 
-  /*if (use_pcl)
+  /*if (use_pcl_visualizer)
   {
     computeDetectionsPCL();
     updateVisualizerDetections();

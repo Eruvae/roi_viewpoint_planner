@@ -15,6 +15,9 @@
 #include <pcl/point_types.h>
 #include <pcl/PointIndices.h>
 
+namespace roi_viewpoint_planner
+{
+
 class GtOctreeLoader
 {
 private:
@@ -32,12 +35,24 @@ private:
   pcl::PointCloud<pcl::PointXYZ>::Ptr gt_pcl;
   std::shared_ptr<std::vector<pcl::PointIndices>> gt_clusters;
 
+  struct PlantInfo
+  {
+    PlantInfo(const std::string &model, const geometry_msgs::Pose &pose) : model(model), pose(pose) {}
+
+    std::string model;
+    geometry_msgs::Pose pose;
+  };
+
+  std::vector<PlantInfo> plant_list;
+
   static inline octomap::OcTreeKey addKeys(const octomap::OcTreeKey &k1, const octomap::OcTreeKey &k2, const octomap::OcTreeKey &zero_key)
   {
     return octomap::OcTreeKey(k1[0] - zero_key[0] + k2[0], k1[1] - zero_key[1] + k2[1], k1[2] - zero_key[2] + k2[2]);
   }
 
   void loadPlantTrees(const std::string &name, const std::string &resolution_str, size_t num_fruits);
+
+  void readPlantPoses();
 
 public:
   GtOctreeLoader(const std::string &world_name, double resolution);
@@ -97,5 +112,7 @@ public:
     return fruit_cell_counts.size();
   }
 };
+
+} // namespace roi_viewpoint_planner
 
 #endif // GT_OCTREE_LOADER_H

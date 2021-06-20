@@ -119,11 +119,11 @@ class Evaluator
 {
 private:
   std::shared_ptr<PlannerInterface> planner;
-  std::unique_ptr<GtOctreeLoader> gtLoader;
+  std::shared_ptr<GtOctreeLoader> gtLoader;
 
   bool gt_comparison;
   std::string world_name;
-  bool use_pcl;
+  bool use_pcl_visualizer;
 
   pcl::visualization::PCLVisualizer *viewer;
   int vp1, vp2;
@@ -185,7 +185,8 @@ private:
                              std::vector<pcl::PointXYZ> &centroids
                              );
 public:
-  Evaluator(std::shared_ptr<PlannerInterface> planner, ros::NodeHandle &nh, ros::NodeHandle &nhp, bool gt_comparison = true, bool use_pcl = false);
+  Evaluator(std::shared_ptr<PlannerInterface> planner, ros::NodeHandle &nh, ros::NodeHandle &nhp,
+            bool gt_comparison = true, bool use_pcl_visualizer = false, std::shared_ptr<GtOctreeLoader> gtLoader = nullptr);
 
   EvaluationParametersOld processDetectedRoisOld();
 
