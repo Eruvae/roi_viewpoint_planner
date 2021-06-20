@@ -133,8 +133,8 @@ private:
   roi_viewpoint_planner::EvaluatorConfig config;
   dynamic_reconfigure::Server<roi_viewpoint_planner::EvaluatorConfig> server;
 
-  std::vector<octomap::point3d> roi_locations;
-  std::vector<octomap::point3d> roi_sizes;
+  std::shared_ptr<const std::vector<octomap::point3d>> roi_locations;
+  std::shared_ptr<const std::vector<octomap::point3d>> roi_sizes;
   octomap::KeySet gtRoiKeys;
   octomap::KeySet gt_tree_keys;
 
@@ -210,6 +210,8 @@ public:
 
   std::ostream& writeHeader(ostream &os);
   std::ostream& writeParams(ostream &os, const EvaluationParameters &res);
+
+  void randomizePlantPositions(const octomap::point3d &min, const octomap::point3d &max, double min_dist);
 };
 
 } // namespace roi_viewpoint_planner

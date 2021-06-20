@@ -14,6 +14,8 @@
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
 #include <pcl/PointIndices.h>
+#include <gazebo_msgs/ModelState.h>
+#include <random>
 
 namespace roi_viewpoint_planner
 {
@@ -22,6 +24,7 @@ class GtOctreeLoader
 {
 private:
   std::string package_path;
+  double tree_resolution;
 
   std::vector<std::vector<octomap::OcTree>> plant_fruit_trees;
   std::vector<std::vector<octomap::KeySet>> plant_fruit_keys;
@@ -35,12 +38,21 @@ private:
   pcl::PointCloud<pcl::PointXYZ>::Ptr gt_pcl;
   std::shared_ptr<std::vector<pcl::PointIndices>> gt_clusters;
 
+  std::shared_ptr<std::vector<octomap::point3d>> fruit_locations;
+  std::shared_ptr<std::vector<octomap::point3d>> fruit_sizes;
+
+  ros::ServiceClient pausePhysicsClient;
+  ros::ServiceClient unpausePhysicsClient;
+  ros::ServiceClient setModelStateClient;
+  std::default_random_engine generator;
+
   struct PlantInfo
   {
-    PlantInfo(const std::string &model, const geometry_msgs::Pose &pose) : model(model), pose(pose) {}
+    PlantInfo(const std::string &model, const gazebo_msgs::ModelState &state)
+      : model(model), state(state) {}
 
     std::string model;
-    geometry_msgs::Pose pose;
+    gazebo_msgs::ModelState state;
   };
 
   std::vector<PlantInfo> plant_list;
@@ -54,8 +66,12 @@ private:
 
   void readPlantPoses();
 
+  double getMinDist(const octomap::point3d &point, const std::vector<octomap::point3d> &past_points);
+
 public:
-  GtOctreeLoader(const std::string &world_name, double resolution);
+  GtOctreeLoader(double resolution);
+
+  void updateGroundtruth(bool read_plant_poses=true);
 
   std::shared_ptr<const std::vector<octomap::OcTree>> getFruitTrees()
   {
@@ -75,6 +91,16 @@ public:
   std::shared_ptr<const std::vector<pcl::PointIndices>> getPclClusters()
   {
     return std::const_pointer_cast<const std::vector<pcl::PointIndices>>(gt_clusters);
+  }
+
+  std::shared_ptr<const std::vector<octomap::point3d>> getFruitLocations()
+  {
+    return std::const_pointer_cast<const std::vector<octomap::point3d>>(fruit_locations);
+  }
+
+  std::shared_ptr<const std::vector<octomap::point3d>> getFruitSizes()
+  {
+    return std::const_pointer_cast<const std::vector<octomap::point3d>>(fruit_sizes);
   }
 
   // return index of associated fruit, or 0 for no fruit
@@ -111,6 +137,8 @@ public:
   {
     return fruit_cell_counts.size();
   }
+
+  void randomizePlantPositions(const octomap::point3d &min, const octomap::point3d &max, double min_dist, bool read_poses=false);
 };
 
 } // namespace roi_viewpoint_planner

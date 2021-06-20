@@ -4,6 +4,7 @@
 #include "roi_viewpoint_planner/viewpoint_planner.h"
 #include <roi_viewpoint_planner_msgs/SaveOctomap.h>
 #include <roi_viewpoint_planner_msgs/MoveToState.h>
+#include <roi_viewpoint_planner_msgs/RandomizePlantPositions.h>
 #include <roi_viewpoint_planner_msgs/LoadOctomap.h>
 #include <roi_viewpoint_planner_msgs/StartEvaluator.h>
 #include <std_srvs/Trigger.h>
@@ -32,6 +33,12 @@ bool startEvaluator(roi_viewpoint_planner_msgs::StartEvaluator::Request &req, ro
     roi_viewpoint_planner::EvalEpisodeEndParam epEndParam = static_cast<roi_viewpoint_planner::EvalEpisodeEndParam>(req.episode_end_param);
     res.success = planner->startEvaluator(req.num_evals, epEndParam, req.episode_duration, req.starting_index);
   }
+  return true;
+}
+
+bool randomizePlantPositions(roi_viewpoint_planner_msgs::RandomizePlantPositions::Request &req, roi_viewpoint_planner_msgs::RandomizePlantPositions::Response &res)
+{
+  res.success = planner->randomizePlantPositions(req.min_point, req.max_point, req.min_dist);
   return true;
 }
 
@@ -222,6 +229,7 @@ int main(int argc, char **argv)
   ros::ServiceServer saveOctomapService = nhp.advertiseService("save_octomap", saveOctomap);
   ros::ServiceServer loadOctomapService = nhp.advertiseService("load_octomap", loadOctomap);
   ros::ServiceServer moveToStateService = nhp.advertiseService("move_to_state", moveToState);
+  ros::ServiceServer randomizePlantPositionsService = nhp.advertiseService("randomize_plant_positions", randomizePlantPositions);
   ros::ServiceServer resetOctomapService = nhp.advertiseService("reset_octomap", resetOctomap);
   ros::ServiceServer resetPlannerService = nhp.advertiseService("reset_planner", resetPlanner);
   ros::ServiceServer startEvaluatorService = nhp.advertiseService("start_evaluator", startEvaluator);

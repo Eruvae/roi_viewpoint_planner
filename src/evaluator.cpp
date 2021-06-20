@@ -26,7 +26,7 @@ Evaluator::Evaluator(std::shared_ptr<PlannerInterface> planner, ros::NodeHandle 
 
     // Register publishers and subscribers
 
-    publishCubeVisualization(gt_pub, roi_locations, roi_sizes, COLOR_GREEN, "gt_rois");
+    publishCubeVisualization(gt_pub, *roi_locations, *roi_sizes, COLOR_GREEN, "gt_rois");
   }
 
   if (use_pcl_visualizer)
@@ -49,7 +49,7 @@ bool Evaluator::readGroundtruth()
     return false;
 
   if (gtLoader == nullptr)
-    gtLoader.reset(new GtOctreeLoader(world_name, planner->getTreeResolution()));
+    gtLoader.reset(new GtOctreeLoader(planner->getTreeResolution()));
 
   octomap_msgs::Octomap fruit_ot_msg;
   fruit_ot_msg.header.frame_id = "world";
@@ -67,7 +67,6 @@ bool Evaluator::readGroundtruth()
     gt_fruits_inflated_pub.publish(fruit_ot_msg);
   }
 
-  auto isGtOcc = [](const octomap_vpp::CountingOcTree &tree, const octomap_vpp::CountingOcTreeNode *node) { return true; };
   gt_pcl = gtLoader->getPclCloud();
   gt_clusters = gtLoader->getPclClusters();
   computeHullsAndVolumes(gt_pcl, *gt_clusters, gt_hulls_clouds, gt_hulls_polygons, gt_params.fruit_volumes, gt_centroids);
@@ -77,37 +76,16 @@ bool Evaluator::readGroundtruth()
 
   // Legacy groundtruth for processDetectedRoisOld
 
-  std::string package_path = ros::package::getPath("roi_viewpoint_planner");
-  std::string gt_file = package_path + "/cfg/world_roi_gts/" + world_name + "_roi_gt.yaml";
-
-  ROS_INFO_STREAM("Reading ground truth");
-  std::ifstream gt_ifs(gt_file);
-
-  if (!gt_ifs.is_open())
-  {
-    ROS_INFO_STREAM("Could not open ground truth file " << gt_file);
-    return false;
-  }
-
-  roi_locations.clear();
-  roi_sizes.clear();
-
-  YAML::Node gt = YAML::Load(gt_ifs);
-  for (const YAML::Node &roi : gt["rois"])
-  {
-    roi_locations.push_back(roi["location"].as<octomap::point3d>());
-    roi_sizes.push_back(roi["size"].as<octomap::point3d>());
-  }
-
-  gt_ifs.close();
+  roi_locations = gtLoader->getFruitLocations();
+  roi_sizes = gtLoader->getFruitSizes();
 
   // Compute GT-keys from bounding boxes
 
   gtRoiKeys.clear();
-  for (size_t i = 0; i < roi_locations.size(); i++)
+  for (size_t i = 0; i < roi_locations->size(); i++)
   {
-    octomap::OcTreeKey minKey = planner->getPlanningTree()->coordToKey(roi_locations[i] - roi_sizes[i] * 0.5);
-    octomap::OcTreeKey maxKey = planner->getPlanningTree()->coordToKey(roi_locations[i] + roi_sizes[i] * 0.5);
+    octomap::OcTreeKey minKey = planner->getPlanningTree()->coordToKey((*roi_locations)[i] - (*roi_sizes)[i] * 0.5);
+    octomap::OcTreeKey maxKey = planner->getPlanningTree()->coordToKey((*roi_locations)[i] + (*roi_sizes)[i] * 0.5);
     octomap::OcTreeKey curKey = minKey;
     for (curKey[0] = minKey[0]; curKey[0] <= maxKey[0]; curKey[0]++)
     {
@@ -313,6 +291,11 @@ bool Evaluator::computeHullsAndVolumes(pcl::PointCloud<pcl::PointXYZ>::ConstPtr 
   if (input_cloud->empty() || clusters.empty())
     return false;
 
+  hulls_clouds.clear();
+  hulls_polygons.clear();
+  cluster_volumes.clear();
+  centroids.clear();
+
   for (const pcl::PointIndices &cluster : clusters)
   {
     pcl::PointCloud<pcl::PointXYZ>::Ptr hull_cloud(new pcl::PointCloud<pcl::PointXYZ>);
@@ -361,14 +344,14 @@ void Evaluator::computePairsAndDistances()
   roiPairs.clear();
 
   // Build up matrix with all pairs
-  distances = boost::numeric::ublas::matrix<double>(roi_locations.size(), detected_locs.size());
+  distances = boost::numeric::ublas::matrix<double>(roi_locations->size(), detected_locs.size());
   std::vector<IndexPair> indices;
-  indices.reserve(roi_locations.size() * detected_locs.size());
-  for (size_t i = 0; i < roi_locations.size(); i++)
+  indices.reserve(roi_locations->size() * detected_locs.size());
+  for (size_t i = 0; i < roi_locations->size(); i++)
   {
     for (size_t j = 0; j < detected_locs.size(); j++)
     {
-      distances(i, j) = (roi_locations[i] - detected_locs[j]).norm();
+      distances(i, j) = ((*roi_locations)[i] - detected_locs[j]).norm();
       indices.push_back(IndexPair(i, j));
     }
   }
@@ -378,10 +361,10 @@ void Evaluator::computePairsAndDistances()
     return distances(a.gt_ind, a.det_ind) > distances(b.gt_ind, b.det_ind);
   };
 
-  boost::dynamic_bitset<> usedGtPoints(roi_locations.size());
+  boost::dynamic_bitset<> usedGtPoints(roi_locations->size());
   boost::dynamic_bitset<> usedDetPoints(detected_locs.size());
 
-  roiPairs.reserve(std::min(roi_locations.size(), detected_locs.size()));
+  roiPairs.reserve(std::min(roi_locations->size(), detected_locs.size()));
 
   double MAX_DISTANCE = 0.2; // Maximal distance to be considered as same ROI
 
@@ -443,7 +426,7 @@ EvaluationParametersOld Evaluator::processDetectedRoisOld()
     updateVisualizerDetections();
   }*/
 
-  // ROS_INFO_STREAM("GT-Rois: " << roi_locations.size() << ", detected Rois: " << detected_locs.size());
+  // ROS_INFO_STREAM("GT-Rois: " << roi_locations->size() << ", detected Rois: " << detected_locs.size());
 
   double average_dist = 0;
   double average_vol_accuracy = 0;
@@ -454,13 +437,13 @@ EvaluationParametersOld Evaluator::processDetectedRoisOld()
     ROS_INFO_STREAM("Closest point pairs:");
     for (const IndexPair &pair : roiPairs)
     {
-      ROS_INFO_STREAM(roi_locations[pair.gt_ind] << " and " << detected_locs[pair.det_ind] << "; distance: " << distances(pair.gt_ind, pair.det_ind));
-      double gs = roi_sizes[pair.gt_ind].x() * roi_sizes[pair.gt_ind].y() * roi_sizes[pair.gt_ind].z();
+      ROS_INFO_STREAM((*roi_locations)[pair.gt_ind] << " and " << detected_locs[pair.det_ind] << "; distance: " << distances(pair.gt_ind, pair.det_ind));
+      double gs = (*roi_sizes)[pair.gt_ind].x() * (*roi_sizes)[pair.gt_ind].y() * (*roi_sizes)[pair.gt_ind].z();
       double ds = detected_sizes[pair.det_ind].x() * detected_sizes[pair.det_ind].y() * detected_sizes[pair.det_ind].z();
 
       double accuracy = 1 - std::abs(ds - gs) / gs;
 
-      ROS_INFO_STREAM("Sizes: " << roi_sizes[pair.gt_ind] << " and " << detected_sizes[pair.det_ind] << "; factor: " << (ds / gs));
+      ROS_INFO_STREAM("Sizes: " << (*roi_sizes)[pair.gt_ind] << " and " << detected_sizes[pair.det_ind] << "; factor: " << (ds / gs));
 
       average_dist += distances(pair.gt_ind, pair.det_ind);
       average_vol_accuracy += accuracy;
@@ -542,7 +525,7 @@ EvaluationParametersOld Evaluator::processDetectedRoisOld()
   if (gt_comparison)
   {
     results.detected_roi_clusters = roiPairs.size();
-    results.roi_percentage = (double)roiPairs.size() / (double)roi_locations.size();
+    results.roi_percentage = (double)roiPairs.size() / (double)roi_locations->size();
     results.average_distance = average_dist;
     results.average_accuracy = average_vol_accuracy;
     results.covered_roi_volume = coveredRoiVolumeRatio;
@@ -616,8 +599,6 @@ EvaluationParameters Evaluator::processDetectedRois(bool save_pointcloud, size_t
       saveClustersAsColoredCloud(filename.str(), roi_pcl, clusters);
     }
 
-    hulls_clouds.clear();
-    hulls_polygons.clear();
     std::vector<pcl::PointXYZ> centroids;
     computeHullsAndVolumes(roi_pcl, clusters, hulls_clouds, hulls_polygons, results.volumes, centroids);
 
@@ -718,6 +699,12 @@ ostream& Evaluator::writeParams(ostream &os, const EvaluationParameters &res)
   os << res.detected_roi_clusters << "," << res.average_distance << "," << res.average_accuracy << "," << res.covered_roi_volume
      << "," << res.roi_key_count << "," << res.true_roi_key_count << "," << res.false_roi_key_count;
   return os;
+}
+
+void Evaluator::randomizePlantPositions(const octomap::point3d &min, const octomap::point3d &max, double min_dist)
+{
+  gtLoader->randomizePlantPositions(min, max, min_dist);
+  readGroundtruth();
 }
 
 }

@@ -2043,6 +2043,15 @@ void ViewpointPlanner::resetOctomap()
   publishMap();
 }
 
+bool ViewpointPlanner::randomizePlantPositions(const geometry_msgs::Point &min, const geometry_msgs::Point &max, double min_dist)
+{
+  if (!evaluator)
+    return false;
+
+  evaluator->randomizePlantPositions(octomap_vpp::pointToOctomath(min), octomap_vpp::pointToOctomath(max), min_dist);
+  return true;
+}
+
 void ViewpointPlanner::plannerLoop()
 {
   for (ros::Rate rate(100); ros::ok(); rate.sleep())

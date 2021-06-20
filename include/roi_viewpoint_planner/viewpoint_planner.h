@@ -387,6 +387,8 @@ public:
 
   void resetOctomap();
 
+  bool randomizePlantPositions(const geometry_msgs::Point &min, const geometry_msgs::Point &max, double min_dist);
+
   void plannerLoop();
 
   void plannerLoopOnce();
