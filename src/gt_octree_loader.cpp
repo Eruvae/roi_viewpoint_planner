@@ -117,7 +117,7 @@ void GtOctreeLoader::updateGroundtruth(bool read_plant_poses)
       fruit_cell_counts.push_back(fruit_keys_global.size());
       final_fruit_keys->push_back(fruit_keys_global);
       gt_clusters->push_back(fruit_indices);
-      fruit_locations->push_back(loc);
+      fruit_locations->push_back((min_coord + max_coord)*0.5);
       fruit_sizes->push_back(max_coord - min_coord);
       fruit_index++;
     }
