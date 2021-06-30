@@ -89,7 +89,7 @@ private:
   }
 
 public:
-  PolygonRandomPointGenerator(const Polygon &poly) : distrib01(0.0, 1.0)
+  PolygonRandomPointGenerator(const Polygon &poly) : distrib01(0.0, 1.0), generator(std::random_device{}())
   {
     std::vector<uint32_t> triangle_inds = mapbox::earcut(poly);
     for (uint32_t i = 0; i < triangle_inds.size(); i += 3)

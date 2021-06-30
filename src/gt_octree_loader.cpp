@@ -37,7 +37,8 @@ namespace roi_viewpoint_planner
 GtOctreeLoader::GtOctreeLoader(double resolution) : package_path(ros::package::getPath("roi_viewpoint_planner")),
   tree_resolution(resolution), final_fruit_trees(new std::vector<octomap::OcTree>), indexed_fruit_tree(new octomap_vpp::CountingOcTree(resolution)),
   gt_pcl(new pcl::PointCloud<pcl::PointXYZ>()), gt_clusters(new std::vector<pcl::PointIndices>()), final_fruit_keys(new std::vector<octomap::KeySet>()),
-  fruit_locations(new std::vector<octomap::point3d>()), fruit_sizes(new std::vector<octomap::point3d>())
+  fruit_locations(new std::vector<octomap::point3d>()), fruit_sizes(new std::vector<octomap::point3d>()),
+  generator(std::random_device{}())
 {
   ros::NodeHandle nh;
   pausePhysicsClient = nh.serviceClient<std_srvs::Empty>("/gazebo/pause_physics");

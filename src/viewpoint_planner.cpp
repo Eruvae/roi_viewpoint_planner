@@ -41,7 +41,8 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, co
   robotIsMoving(false),
   scanInserted(false),
   m2s_current_steps(0),
-  eval_running(false)
+  eval_running(false),
+  random_engine(std::random_device{}())
 {
 
   std::stringstream fDateTime;
