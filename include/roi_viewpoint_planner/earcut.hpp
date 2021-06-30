@@ -27,13 +27,19 @@ THIS SOFTWARE.
 #include <memory>
 #include <vector>
 
-namespace mapbox {
+namespace random_point_generator {
 
 namespace util {
 
 template <std::size_t I, typename T> struct nth {
     inline static typename std::tuple_element<I, T>::type
     get(const T& t) { return std::get<I>(t); }
+};
+
+template <typename T> struct pt {
+inline static T create(const typename std::tuple_element<0, T>::type &x,
+                       const typename std::tuple_element<1, T>::type &y)
+{ return {x, y}; }
 };
 
 }
@@ -828,7 +834,7 @@ void Earcut<N>::removeNode(Node* p) {
 
 template <typename N = uint32_t, typename Polygon>
 std::vector<N> earcut(const Polygon& poly) {
-    mapbox::detail::Earcut<N> earcut;
+    random_point_generator::detail::Earcut<N> earcut;
     earcut(poly);
     return std::move(earcut.indices);
 }
