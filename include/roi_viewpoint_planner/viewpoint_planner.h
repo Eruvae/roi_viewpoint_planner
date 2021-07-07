@@ -367,7 +367,7 @@ public:
 
   bool moveToPose(const geometry_msgs::Pose &goal_pose, bool async=false, bool safe=true);
 
-  bool moveToState(const robot_state::RobotState &goal_state, bool async=false, bool safe=true);
+  bool moveToState(const moveit::core::RobotStateConstPtr &goal_state, bool async=false, bool safe=true);
 
   bool moveToState(const std::vector<double> &joint_values, bool async=false, bool safe=true);
 

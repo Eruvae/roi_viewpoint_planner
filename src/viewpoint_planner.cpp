@@ -1298,7 +1298,11 @@ std::vector<Viewpoint> ViewpointPlanner::sampleAroundMultiROICenters(const std::
         if (!manipulator_group.setJointValueTarget(transformToWorkspace(vp.pose), "camera_link"))
           continue;
 
+      #if ROS_VERSION_MAJOR == 1 && ROS_VERSION_MINOR <= 14 // ROS melodic or older
+        vp.joint_target.reset(new robot_state::RobotState(manipulator_group.getJointValueTarget()));
+      #else
         manipulator_group.getJointValueTarget(vp.joint_target);
+      #endif
       }
 
       planningTree->computeRayKeys(center, spherePoint, ray);
@@ -1422,7 +1426,11 @@ std::vector<Viewpoint> ViewpointPlanner::sampleContourPoints(const octomap::poin
       if (!manipulator_group.setJointValueTarget(transformToWorkspace(vp.pose), "camera_link"))
         continue;
 
+    #if ROS_VERSION_MAJOR == 1 && ROS_VERSION_MINOR <= 14 // ROS melodic or older
+      vp.joint_target.reset(new robot_state::RobotState(manipulator_group.getJointValueTarget()));
+    #else
       manipulator_group.getJointValueTarget(vp.joint_target);
+    #endif
     }
     octomap_vpp::RoiOcTreeNode *node = planningTree->search(vpOrig);
     if (node != NULL && node->getLogOdds() > 0) // Node is occupied
@@ -1525,7 +1533,11 @@ std::vector<Viewpoint> ViewpointPlanner::sampleRoiContourPoints(const octomap::p
       if (!manipulator_group.setJointValueTarget(transformToWorkspace(vp.pose), "camera_link"))
         continue;
 
+    #if ROS_VERSION_MAJOR == 1 && ROS_VERSION_MINOR <= 14 // ROS melodic or older
+      vp.joint_target.reset(new robot_state::RobotState(manipulator_group.getJointValueTarget()));
+    #else
       manipulator_group.getJointValueTarget(vp.joint_target);
+    #endif
     }
 
     planningTree->computeRayKeys(target, spherePoint, ray);
@@ -1631,7 +1643,11 @@ std::vector<Viewpoint> ViewpointPlanner::sampleRoiAdjecentCountours(const octoma
       if (!manipulator_group.setJointValueTarget(transformToWorkspace(vp.pose), "camera_link"))
         continue;
 
+    #if ROS_VERSION_MAJOR == 1 && ROS_VERSION_MINOR <= 14 // ROS melodic or older
+      vp.joint_target.reset(new robot_state::RobotState(manipulator_group.getJointValueTarget()));
+    #else
       manipulator_group.getJointValueTarget(vp.joint_target);
+    #endif
     }
 
     planningTree->computeRayKeys(target, spherePoint, ray);
@@ -1727,7 +1743,11 @@ std::vector<Viewpoint> ViewpointPlanner::sampleExplorationPoints(const octomap::
       if (!manipulator_group.setJointValueTarget(transformToWorkspace(vp.pose), "camera_link"))
         continue;
 
+    #if ROS_VERSION_MAJOR == 1 && ROS_VERSION_MINOR <= 14 // ROS melodic or older
+      vp.joint_target.reset(new robot_state::RobotState(manipulator_group.getJointValueTarget()));
+    #else
       manipulator_group.getJointValueTarget(vp.joint_target);
+    #endif
     }
 
     vp.target = target;
@@ -1794,7 +1814,11 @@ std::vector<Viewpoint> ViewpointPlanner::sampleBorderPoints(const octomap::point
       if (!manipulator_group.setJointValueTarget(transformToWorkspace(vp.pose), "camera_link"))
         continue;
 
+    #if ROS_VERSION_MAJOR == 1 && ROS_VERSION_MINOR <= 14 // ROS melodic or older
+      vp.joint_target.reset(new robot_state::RobotState(manipulator_group.getJointValueTarget()));
+    #else
       manipulator_group.getJointValueTarget(vp.joint_target);
+    #endif
     }
 
 
@@ -1869,9 +1893,9 @@ bool ViewpointPlanner::moveToPose(const geometry_msgs::Pose &goal_pose, bool asy
   return planAndExecuteFromMoveGroup(async, safe);
 }
 
-bool ViewpointPlanner::moveToState(const robot_state::RobotState &goal_state, bool async, bool safe)
+bool ViewpointPlanner::moveToState(const robot_state::RobotStateConstPtr &goal_state, bool async, bool safe)
 {
-  if (!manipulator_group.setJointValueTarget(goal_state))
+  if (!manipulator_group.setJointValueTarget(*goal_state))
   {
     ROS_INFO_STREAM("Couldn't set joint target, make sure values are in bounds");
     return false;

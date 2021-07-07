@@ -11,7 +11,11 @@ namespace roi_viewpoint_planner
 struct Viewpoint
 {
   geometry_msgs::Pose pose;
+#if ROS_VERSION_MAJOR == 1 && ROS_VERSION_MINOR <= 14 // ROS melodic or older
+  robot_state::RobotStatePtr joint_target;
+#else
   std::vector<double> joint_target;
+#endif
   octomap::point3d target;
   double infoGain;
   double distance;
