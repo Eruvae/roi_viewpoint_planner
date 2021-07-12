@@ -194,6 +194,12 @@ void reconfigureCallback(roi_viewpoint_planner::PlannerConfig &config, uint32_t 
     planner->m2s_delta_thresh = config.m2s_delta_thresh;
     planner->m2s_max_steps = config.m2s_max_steps;
   }
+  if (level & (1 << 22)) // publish_cluster_visualization
+  {
+    planner->publish_cluster_visualization = config.publish_cluster_visualization;
+    planner->minimum_cluster_size = config.minimum_cluster_size;
+    planner->cluster_neighborhood = static_cast<octomap_vpp::Neighborhood>(config.cluster_neighborhood);
+  }
   current_config = config;
 }
 

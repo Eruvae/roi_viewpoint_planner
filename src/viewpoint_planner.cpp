@@ -370,15 +370,27 @@ bool ViewpointPlanner::resetEvaluator()
 void ViewpointPlanner::publishMap()
 {
   octomap_msgs::Octomap map_msg;
+  std::vector<octomap::point3d> centers, volumes;
   map_msg.header.frame_id = map_frame;
   map_msg.header.stamp = ros::Time::now();
+
   tree_mtx.lock();
   bool msg_generated = octomap_msgs::fullMapToMsg(*planningTree, map_msg);
+  if (publish_cluster_visualization)
+  {
+    std::tie(centers, volumes) = planningTree->getClusterCentersWithVolume(minimum_cluster_size, cluster_neighborhood);
+  }
   tree_mtx.unlock();
+
   if (msg_generated)
   {
     octomapPub.publish(map_msg);
     //publishOctomapToPlanningScene(map_msg);
+  }
+
+  if (publish_cluster_visualization)
+  {
+    publishCubeVisualization(cubeVisPub, centers, volumes);
   }
 
   //if (octomap_msgs::binaryMapToMsg(testTree, map_msg))

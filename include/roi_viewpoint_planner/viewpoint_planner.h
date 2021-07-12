@@ -250,6 +250,10 @@ public:
   int m2s_max_steps;
   int m2s_current_steps;
 
+  bool publish_cluster_visualization;
+  size_t minimum_cluster_size;
+  octomap_vpp::Neighborhood cluster_neighborhood;
+
   size_t roiMaxSamples, explMaxSamples;
   UtilityType roiUtil, explUtil;
 
