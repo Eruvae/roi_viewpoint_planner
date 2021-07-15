@@ -5,6 +5,7 @@
 #include <roi_viewpoint_planner_msgs/SaveOctomap.h>
 #include <roi_viewpoint_planner_msgs/MoveToState.h>
 #include <roi_viewpoint_planner_msgs/RandomizePlantPositions.h>
+#include <roi_viewpoint_planner_msgs/ResetPlanner.h>
 #include <roi_viewpoint_planner_msgs/LoadOctomap.h>
 #include <roi_viewpoint_planner_msgs/StartEvaluator.h>
 #include <std_srvs/Trigger.h>
@@ -75,7 +76,7 @@ bool resetOctomap(std_srvs::Empty::Request &req, std_srvs::Empty::Response &res)
   return true;
 }
 
-bool resetPlanner(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res)
+bool resetPlanner(roi_viewpoint_planner_msgs::ResetPlanner::Request &req, roi_viewpoint_planner_msgs::ResetPlanner::Response &res)
 {
   config_mutex.lock();
   current_config.mode = roi_viewpoint_planner::Planner_IDLE;
@@ -88,7 +89,7 @@ bool resetPlanner(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &
   std::vector<double> joint_start_values;
   if(nhp_pt->getParam("initial_joint_values", joint_start_values))
   {
-    res.success = planner->moveToState(joint_start_values);
+    res.success = planner->moveToState(joint_start_values, req.async, false);
   }
   else
   {
@@ -99,7 +100,7 @@ bool resetPlanner(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &
 
 bool moveToState(roi_viewpoint_planner_msgs::MoveToState::Request &req, roi_viewpoint_planner_msgs::MoveToState::Response &res)
 {
-  res.success = planner->moveToState(req.joint_values, true);
+  res.success = planner->moveToState(req.joint_values, req.async, false);
   return true;
 }
 
