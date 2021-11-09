@@ -130,7 +130,7 @@ find_package(PCL REQUIRED)
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
    INCLUDE_DIRS include
-   LIBRARIES ${PROJECT_NAME}_evaluator
+   LIBRARIES ${PROJECT_NAME}
    CATKIN_DEPENDS ${CATKIN_DEPENDENCIES}
    DEPENDS OCTOMAP YAMLCPP PCL
 )
@@ -178,18 +178,23 @@ set (EVALUATOR_SAVED_TREE_SRC_FILES
   src/planner_interfaces/saved_tree_interface.cpp
 )
 
+set (EVALUATOR_PROV_TREE_SRC_FILES
+    src/evaluator.cpp
+    src/gt_octree_loader.cpp
+    src/planner_interfaces/provided_tree_interface.cpp
+)
+
 ## Declare a C++ library
-add_library(${PROJECT_NAME}_evaluator
-  src/evaluator.cpp
-  src/gt_octree_loader.cpp
-  src/planner_interfaces/provided_tree_interface.cpp
+add_library(${PROJECT_NAME}
+    ${VIEWPOINT_PLANNER_SRC_FILES}
+    ${EVALUATOR_PROV_TREE_SRC_FILES}
 )
 
 ## Add cmake target dependencies of the library
 ## as an example, code may need to be generated before libraries
 ## either from message generation or dynamic reconfigure
 # add_dependencies(${PROJECT_NAME} ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
-add_dependencies(${PROJECT_NAME}_evaluator ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+add_dependencies(${PROJECT_NAME} ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 ## Declare a C++ executable
 ## With catkin_make all packages are built within a single CMake context
