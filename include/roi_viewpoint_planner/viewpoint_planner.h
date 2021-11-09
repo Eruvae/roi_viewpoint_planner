@@ -270,6 +270,16 @@ public:
   bool saveEvaluatorData(double plan_length, double traj_duration);
   bool resetEvaluator();
 
+  std::shared_ptr<octomap_vpp::RoiOcTree> getPlanningTree()
+  {
+    return planningTree;
+  }
+
+  boost::mutex& getTreeMutex()
+  {
+    return tree_mtx;
+  }
+
   // Set planner parameters
 
   void setPoseReferenceFrame(const std::string& pose_reference_frame)
