@@ -2097,14 +2097,14 @@ void ViewpointPlanner::plannerLoop()
   }
 }
 
-void ViewpointPlanner::plannerLoopOnce()
+bool ViewpointPlanner::plannerLoopOnce()
 {
   timeLogger.startLoop();
 
   if (mode == IDLE || (wait_for_scan && !scanInserted.load()))
   {
     timeLogger.endLoop();
-    return;
+    return false;
   }
 
   publishMap();
@@ -2114,7 +2114,7 @@ void ViewpointPlanner::plannerLoopOnce()
   if (mode == MAP_ONLY)
   {
     timeLogger.endLoop();
-    return;
+    return false;
   }
 
   geometry_msgs::TransformStamped camFrameTf;
@@ -2127,7 +2127,7 @@ void ViewpointPlanner::plannerLoopOnce()
   {
     ROS_ERROR_STREAM("Couldn't find transform to map frame in plannerLoop: " << e.what());
     timeLogger.endLoop();
-    return;
+    return false;
   }
 
   const geometry_msgs::Vector3 &camOrigTf = camFrameTf.transform.translation;
@@ -2190,7 +2190,7 @@ void ViewpointPlanner::plannerLoopOnce()
       m2s_current_steps = 0;
     }
     timeLogger.endLoop();
-    return;
+    return m2s_success;
   }
 
   std::vector<Viewpoint> roiSamplingVps, explSamplingVps;
@@ -2266,7 +2266,7 @@ void ViewpointPlanner::plannerLoopOnce()
   if (!execute_plan)
   {
     timeLogger.endLoop();
-    return;
+    return false;
   }
 
   std::vector<Viewpoint> &nextViewpoints = [&]() -> std::vector<Viewpoint>&
@@ -2338,6 +2338,7 @@ void ViewpointPlanner::plannerLoopOnce()
       m2s_current_steps = 0;
   }
   timeLogger.endLoop();
+  return move_success;
 }
 
 

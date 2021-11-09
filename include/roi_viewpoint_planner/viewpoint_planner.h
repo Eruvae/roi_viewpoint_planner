@@ -395,7 +395,7 @@ public:
 
   void plannerLoop();
 
-  void plannerLoopOnce();
+  bool plannerLoopOnce(); // returns true if moved
 };
 
 } // namespace roi_viewpoint_planner
