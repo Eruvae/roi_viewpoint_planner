@@ -329,7 +329,7 @@ public:
    * @param viewDir camera view direction (x-axis)
    * @return computed quaternion
    */
-  tf2::Quaternion dirVecToQuat(octomath::Vector3 dirVec, const tf2::Quaternion &camQuat, const tf2::Vector3 &viewDir);
+  tf2::Quaternion dirVecToQuat(const octomath::Vector3 &dirVec, const tf2::Quaternion &camQuat, const tf2::Vector3 &viewDir);
 
   void publishViewpointVisualizations(const std::vector<Viewpoint> &viewpoints, const std::string &ns, const std_msgs::ColorRGBA &color = COLOR_RED);
 

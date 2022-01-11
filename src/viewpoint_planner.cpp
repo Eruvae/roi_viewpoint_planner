@@ -710,7 +710,7 @@ octomap::point3d ViewpointPlanner::sampleRandomPointOnSphere(const octomap::poin
  * @param viewDir camera view direction (x-axis)
  * @return computed quaternion
  */
-tf2::Quaternion ViewpointPlanner::dirVecToQuat(octomath::Vector3 dirVec, const tf2::Quaternion &camQuat, const tf2::Vector3 &viewDir)
+tf2::Quaternion ViewpointPlanner::dirVecToQuat(const octomath::Vector3 &dirVec, const tf2::Quaternion &camQuat, const tf2::Vector3 &viewDir)
 {
   tf2::Vector3 dirVecTf = tf2::Vector3(dirVec.x(), dirVec.y(), dirVec.z());
   tf2::Vector3 rotAx = viewDir.cross(dirVecTf);
