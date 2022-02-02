@@ -11,7 +11,7 @@ do
   grid=$(echo "2/$i" | bc)
   bv_res="${1}_${i}.binvox"
   bt_res="${1}_${i}.bt"
-  ./binvox -e -bb -1 -1 -1 1 1 1 -d $grid -rotx $wrl
+  ./binvox -e -bb -1 -1 -1 1 1 1 -d $grid $wrl
   mv $bv $bv_res
   binvox2bt $bv_res -o $bt_res
   rm $bv_res
