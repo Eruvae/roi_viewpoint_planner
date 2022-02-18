@@ -2052,16 +2052,29 @@ std::string ViewpointPlanner::saveOctomap(const std::string &name, bool name_is_
 
 int ViewpointPlanner::loadOctomap(const std::string &filename)
 {
-  octomap_vpp::RoiOcTree *map = NULL;
-  octomap::AbstractOcTree *tree =  octomap::AbstractOcTree::read(filename);
-  if (!tree)
-    return -1;
-
-  map = dynamic_cast<octomap_vpp::RoiOcTree*>(tree);
-  if(!map)
+  octomap_vpp::RoiOcTree *map = nullptr;
+  if (boost::algorithm::ends_with(filename, ".bt"))
   {
-    delete tree;
-    return -2;
+    map = new octomap_vpp::RoiOcTree(0.1);
+    bool success = map->readBinary(filename);
+    if (!success)
+    {
+      delete map;
+      return -1;
+    }
+  }
+  else
+  {
+    octomap::AbstractOcTree *tree =  octomap::AbstractOcTree::read(filename);
+    if (!tree)
+      return -1;
+
+    map = dynamic_cast<octomap_vpp::RoiOcTree*>(tree);
+    if(!map)
+    {
+      delete tree;
+      return -2;
+    }
   }
   tree_mtx.lock();
   planningTree.reset(map);
