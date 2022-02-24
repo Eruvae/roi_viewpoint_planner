@@ -162,6 +162,7 @@ set(VIEWPOINT_PLANNER_SRC_FILES
   src/viewpoint_samplers.cpp
   src/viewpoint_utilities.cpp
   src/evaluator.cpp
+  src/evaluator_external_clusters.cpp
   src/gt_octree_loader.cpp
   src/planner_interfaces/direct_planner_interface.cpp
 )
@@ -182,6 +183,11 @@ set (EVALUATOR_PROV_TREE_SRC_FILES
     src/evaluator.cpp
     src/gt_octree_loader.cpp
     src/planner_interfaces/provided_tree_interface.cpp
+)
+
+set (EVALUATOR_EXTERNAL_CLUSTERS_SRC_FILES
+    src/evaluator_external_clusters.cpp
+    src/gt_octree_loader.cpp
 )
 
 ## Declare a C++ library
@@ -208,6 +214,7 @@ add_executable(workspace_publisher src/workspace_publisher.cpp)
 add_executable(generate_color_octree src/generate_color_octree.cpp)
 add_executable(publish_octree src/publish_octree.cpp)
 add_executable(test_random_point_generator src/test_random_point_generator.cpp)
+add_executable(evaluate_external_clusters src/evaluate_external_clusters_node.cpp ${EVALUATOR_EXTERNAL_CLUSTERS_SRC_FILES})
 
 ## Rename C++ executable without prefix
 ## The above recommended prefix causes long target names, the following renames the
@@ -227,6 +234,7 @@ add_dependencies(workspace_publisher ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catki
 add_dependencies(generate_color_octree ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 add_dependencies(publish_octree ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 add_dependencies(test_random_point_generator ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+add_dependencies(evaluate_external_clusters ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 ## Specify libraries to link a library or executable target against
 # target_link_libraries(${PROJECT_NAME}_node
@@ -241,6 +249,7 @@ target_link_libraries(workspace_publisher ${catkin_LIBRARIES} ${OCTOMAP_LIBRARIE
 target_link_libraries(generate_color_octree ${catkin_LIBRARIES} ${OCTOMAP_LIBRARIES})
 target_link_libraries(publish_octree ${catkin_LIBRARIES} ${OCTOMAP_LIBRARIES})
 target_link_libraries(test_random_point_generator ${catkin_LIBRARIES})
+target_link_libraries(evaluate_external_clusters ${catkin_LIBRARIES} ${OCTOMAP_LIBRARIES} ${YAMLCPP_LIBRARIES} ${PCL_LIBRARIES})
 
 #############
 ## Install ##

@@ -1931,9 +1931,9 @@ bool ViewpointPlanner::planAndExecuteFromMoveGroup(bool async, bool safe)
 {
   moveit::planning_interface::MoveGroupInterface::Plan plan;
   ros::Time planStartTime = ros::Time::now();
-  moveit::planning_interface::MoveItErrorCode res = manipulator_group.plan(plan);
+  moveit::core::MoveItErrorCode res = manipulator_group.plan(plan);
   ROS_INFO_STREAM("Planning duration: " << (ros::Time::now() - planStartTime));
-  if (res != moveit::planning_interface::MoveItErrorCode::SUCCESS)
+  if (res != moveit::core::MoveItErrorCode::SUCCESS)
   {
     ROS_INFO("Could not find plan");
     return false;
@@ -1995,13 +1995,13 @@ bool ViewpointPlanner::safeExecutePlan(const moveit::planning_interface::MoveGro
 
 bool ViewpointPlanner::executePlan(const moveit::planning_interface::MoveGroupInterface::Plan &plan, bool async)
 {
-  moveit::planning_interface::MoveItErrorCode res;
+  moveit::core::MoveItErrorCode res;
   if (async)
     res = manipulator_group.asyncExecute(plan);
   else
     res = manipulator_group.execute(plan);
 
-  return (res == moveit::planning_interface::MoveItErrorCode::SUCCESS);
+  return (res == moveit::core::MoveItErrorCode::SUCCESS);
 }
 
 bool ViewpointPlanner::saveTreeAsObj(const std::string &file_name)

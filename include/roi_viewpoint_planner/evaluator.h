@@ -12,7 +12,6 @@
 #include <octomap/OcTreeKey.h>
 #include <octomap_msgs/Octomap.h>
 #include <octomap_msgs/conversions.h>
-#include <yaml-cpp/yaml.h>
 #include <fstream>
 #include <boost/thread/mutex.hpp>
 #include <boost/dynamic_bitset.hpp>
@@ -36,30 +35,6 @@
 #include "roi_viewpoint_planner/gt_octree_loader.h"
 #include <octomap_vpp/NearestRegionOcTree.h>
 #include <pcl/io/pcd_io.h>
-
-namespace YAML {
-template<>
-struct convert<octomap::point3d> {
-  static Node encode(const octomap::point3d& rhs) {
-    Node node;
-    node.push_back(rhs.x());
-    node.push_back(rhs.y());
-    node.push_back(rhs.z());
-    return node;
-  }
-
-  static bool decode(const Node& node, octomap::point3d& rhs) {
-    if(!node.IsSequence() || node.size() != 3) {
-      return false;
-    }
-
-    rhs.x() = node[0].as<double>();
-    rhs.y() = node[1].as<double>();
-    rhs.z() = node[2].as<double>();
-    return true;
-  }
-};
-}
 
 namespace roi_viewpoint_planner
 {
