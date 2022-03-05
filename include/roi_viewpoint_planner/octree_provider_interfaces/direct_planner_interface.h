@@ -1,14 +1,14 @@
 #ifndef DIRECT_PLANNER_INTERFACE_H
 #define DIRECT_PLANNER_INTERFACE_H
 
-#include "roi_viewpoint_planner/planner_interface.h"
+#include "rvp_evaluation/octree_provider_interface.h"
 
 namespace roi_viewpoint_planner
 {
 
 class ViewpointPlanner;
 
-class DirectPlannerInterface : public PlannerInterface
+class DirectPlannerInterface : public rvp_evaluation::OctreeProviderInterface
 {
 private:
   ViewpointPlanner *planner;

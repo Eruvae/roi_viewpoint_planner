@@ -7,8 +7,8 @@
 #include <octomap_vpp/marching_cubes.h>
 #include <octomap_vpp/octomap_transforms.h>
 #include <boost/date_time/posix_time/posix_time.hpp>
-#include "roi_viewpoint_planner/planner_interfaces/direct_planner_interface.h"
-#include "roi_viewpoint_planner/rvp_utils.h"
+#include "roi_viewpoint_planner/octree_provider_interfaces/direct_planner_interface.h"
+#include "rvp_evaluation/rvp_utils.h"
 
 namespace roi_viewpoint_planner
 {
@@ -279,8 +279,8 @@ bool ViewpointPlanner::saveEvaluatorData(double plan_length, double traj_duratio
   eval_accumulatedPlanDuration += traj_duration;
   eval_accumulatedPlanLength += plan_length;
 
-  EvaluationParameters res = evaluator->processDetectedRois(true, eval_start_index + eval_trial_num, static_cast<size_t>(passed_time));
-  EvaluationParametersOld resOld = evaluator->processDetectedRoisOld();
+  rvp_evaluation::EvaluationParameters res = evaluator->processDetectedRois(true, eval_start_index + eval_trial_num, static_cast<size_t>(passed_time));
+  rvp_evaluation::EvaluationParametersOld resOld = evaluator->processDetectedRoisOld();
 
   eval_resultsFile << passed_time << "," << eval_accumulatedPlanDuration << "," << eval_accumulatedPlanLength << ",";
   evaluator->writeParams(eval_resultsFile, res) << "," << eval_lastStep << std::endl;
@@ -1986,7 +1986,7 @@ bool ViewpointPlanner::safeExecutePlan(const moveit::planning_interface::MoveGro
   {
     for (ros::Rate r(100); !scanInserted; r.sleep()); // wait for scan
     timeLogger.saveTime(TimeLogger::WAITED_FOR_SCAN);
-    saveEvaluatorData(computeTrajectoryLength(plan), getTrajectoryDuration(plan));
+    saveEvaluatorData(rvp_evaluation::computeTrajectoryLength(plan), rvp_evaluation::getTrajectoryDuration(plan));
     timeLogger.saveTime(TimeLogger::EVALUATED);
   }
 

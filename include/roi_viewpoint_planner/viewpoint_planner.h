@@ -57,11 +57,11 @@ namespace std {
 
 #include <roi_viewpoint_planner_msgs/PlannerState.h>
 #include "roi_viewpoint_planner/rvp_types.h"
-#include "roi_viewpoint_planner/compute_cubes.h"
+#include "rvp_evaluation/compute_cubes.h"
 #include "roi_viewpoint_planner/viewpoint_samplers.h"
 #include "roi_viewpoint_planner/viewpoint_utilities.h"
-#include "roi_viewpoint_planner/evaluator.h"
-#include "roi_viewpoint_planner/planner_interfaces/direct_planner_interface.h"
+#include "rvp_evaluation/evaluator.h"
+#include "roi_viewpoint_planner/octree_provider_interfaces/direct_planner_interface.h"
 
 #include "roi_viewpoint_planner/time_logger.h"
 
@@ -72,6 +72,8 @@ namespace std {
 #endif
 
 namespace roi_viewpoint_planner {
+
+using rvp_evaluation::Evaluator;
 
 // Constants
 
