@@ -42,6 +42,10 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, co
   scanInserted(false),
   m2s_current_steps(0),
   eval_running(false),
+  eval_randomize(true),
+  eval_randomize_min(-1, -1, -0.1),
+  eval_randomize_max(1, 1, 0.1),
+  eval_randomize_dist(0.4),
   random_engine(std::random_device{}())
 {
 
@@ -74,6 +78,8 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, co
 
   requestExecutionConfirmation = nhp.serviceClient<std_srvs::Trigger>("request_execution_confirmation");
   moveToSeeClient = nh.serviceClient<roi_viewpoint_planner_msgs::GetGradient>("move_to_see_srv/get_gradient");
+
+  resetMoveitOctomapClient = nh.serviceClient<std_srvs::Empty>("/clear_octomap");
 
   setPoseReferenceFrame(map_frame);
 
@@ -220,7 +226,8 @@ bool ViewpointPlanner::initializeEvaluator(ros::NodeHandle &nh, ros::NodeHandle 
   return true;
 }
 
-bool ViewpointPlanner::startEvaluator(size_t numEvals, EvalEpisodeEndParam episodeEndParam, double episodeDuration, int start_index)
+bool ViewpointPlanner::startEvaluator(size_t numEvals, EvalEpisodeEndParam episodeEndParam, double episodeDuration, int start_index,
+                                      bool randomize_plants, const octomap::point3d &min, const octomap::point3d &max, double min_dist)
 {
   if (eval_running)
     return false;
@@ -233,6 +240,17 @@ bool ViewpointPlanner::startEvaluator(size_t numEvals, EvalEpisodeEndParam episo
   eval_running = true;
   execute_plan = true;
   require_execution_confirmation = false;
+
+  eval_randomize = randomize_plants;
+  eval_randomize_min = min;
+  eval_randomize_max = max;
+  eval_randomize_dist = min_dist;
+
+  if (eval_randomize)
+  {
+    evaluator->randomizePlantPositions(eval_randomize_min, eval_randomize_max, eval_randomize_dist);
+  }
+  resetOctomap();
 
   setEvaluatorStartParams();
   timeLogger.initNewFile(true, start_index);
@@ -354,6 +372,13 @@ bool ViewpointPlanner::resetEvaluator()
   {
     eval_running = false;
   }
+
+  if (eval_randomize)
+  {
+    evaluator->randomizePlantPositions(eval_randomize_min, eval_randomize_max, eval_randomize_dist);
+  }
+  resetOctomap();
+
   return success;
 }
 
@@ -2090,6 +2115,11 @@ void ViewpointPlanner::resetOctomap()
   planningTree->clear();
   planningTree->clearRoiKeys();
   tree_mtx.unlock();
+  if (!resetMoveitOctomapClient.call(emptySrv))
+  {
+      ROS_ERROR("Failed to reset moveit octomap");
+  }
+
   publishMap();
 }
 
