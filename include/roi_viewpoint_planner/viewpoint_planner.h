@@ -61,7 +61,8 @@ namespace std {
 #include "rvp_evaluation/compute_cubes.h"
 #include "roi_viewpoint_planner/viewpoint_samplers.h"
 #include "roi_viewpoint_planner/viewpoint_utilities.h"
-#include "rvp_evaluation/evaluator.h"
+#include <rvp_evaluation/evaluator.h>
+#include <rvp_evaluation/evaluator_external_clusters.h>
 #include "roi_viewpoint_planner/octree_provider_interfaces/direct_planner_interface.h"
 
 #include "roi_viewpoint_planner/time_logger.h"
@@ -73,8 +74,6 @@ namespace std {
 #endif
 
 namespace roi_viewpoint_planner {
-
-using rvp_evaluation::Evaluator;
 
 // Constants
 
@@ -111,7 +110,9 @@ private:
   std::shared_ptr<octomap_vpp::RoiOcTree> planningTree;
   octomap_vpp::WorkspaceOcTree *workspaceTree;
   octomap_vpp::WorkspaceOcTree *samplingTree;
-  Evaluator *evaluator;
+  std::unique_ptr<rvp_evaluation::Evaluator> evaluator;
+  std::unique_ptr<rvp_evaluation::ExternalClusterEvaluator> external_cluster_evaluator;
+
   octomap::point3d wsMin, wsMax;
   octomap::point3d stMin, stMax;
   tf2_ros::Buffer tfBuffer;
@@ -133,6 +134,7 @@ private:
   ros::ServiceClient moveToSeeClient;
 
   ros::ServiceClient resetMoveitOctomapClient;
+  ros::ServiceClient resetVoxbloxMapClient;
   std_srvs::Empty emptySrv;
 
   std::string bag_write_filename;
@@ -187,6 +189,7 @@ private:
   size_t eval_trial_num;
   std::ofstream eval_resultsFile;
   std::ofstream eval_resultsFileOld;
+  std::ofstream eval_externalClusterFile;
   std::ofstream eval_fruitCellPercFile;
   std::ofstream eval_volumeAccuracyFile;
   std::ofstream eval_distanceFile;

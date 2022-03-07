@@ -80,6 +80,7 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, co
   moveToSeeClient = nh.serviceClient<roi_viewpoint_planner_msgs::GetGradient>("move_to_see_srv/get_gradient");
 
   resetMoveitOctomapClient = nh.serviceClient<std_srvs::Empty>("/clear_octomap");
+  resetVoxbloxMapClient = nh.serviceClient<std_srvs::Empty>("/voxblox_node/clear_map");
 
   setPoseReferenceFrame(map_frame);
 
@@ -220,7 +221,9 @@ ViewpointPlanner::~ViewpointPlanner()
 bool ViewpointPlanner::initializeEvaluator(ros::NodeHandle &nh, ros::NodeHandle &nhp)
 {
   std::shared_ptr<DirectPlannerInterface> interface(new DirectPlannerInterface(this));
-  evaluator = new Evaluator(interface, nh, nhp, true);
+  std::shared_ptr<rvp_evaluation::GtOctreeLoader> gtLoader(new rvp_evaluation::GtOctreeLoader(planningTree->getResolution()));
+  evaluator.reset(new rvp_evaluation::Evaluator(interface, nh, nhp, true, false, gtLoader));
+  external_cluster_evaluator.reset(new rvp_evaluation::ExternalClusterEvaluator(gtLoader));
   eval_trial_num = 0;
   eval_start_index = 0;
   return true;
@@ -262,6 +265,7 @@ void ViewpointPlanner::setEvaluatorStartParams()
   std::string file_index_str = std::to_string(eval_start_index + eval_trial_num);
   eval_resultsFile = std::ofstream("planner_results_" + file_index_str + ".csv");
   eval_resultsFileOld = std::ofstream("planner_results_old" + file_index_str + ".csv");
+  eval_externalClusterFile = std::ofstream("planner_results_ec" + file_index_str + ".csv");
   eval_fruitCellPercFile = std::ofstream("results_fruit_cells_" + file_index_str + ".csv");
   eval_volumeAccuracyFile = std::ofstream("results_volume_accuracy_" + file_index_str + ".csv");
   eval_distanceFile = std::ofstream("results_distances_" + file_index_str + ".csv");
@@ -269,6 +273,8 @@ void ViewpointPlanner::setEvaluatorStartParams()
   evaluator->writeHeader(eval_resultsFile) << ",Step" << std::endl;
   eval_resultsFileOld << "Time (s),Plan duration (s),Plan Length,";
   evaluator->writeHeaderOld(eval_resultsFileOld) << ",Step" << std::endl;
+  eval_externalClusterFile << "Time (s),Plan duration (s),Plan Length,";
+  external_cluster_evaluator->writeHeader(eval_externalClusterFile) << ",Step" << std::endl;
   eval_plannerStartTime = ros::Time::now();
   eval_accumulatedPlanDuration = 0;
   eval_accumulatedPlanLength = 0;
@@ -305,6 +311,9 @@ bool ViewpointPlanner::saveEvaluatorData(double plan_length, double traj_duratio
 
   eval_resultsFileOld << passed_time << "," << eval_accumulatedPlanDuration << "," << eval_accumulatedPlanLength << ",";
   evaluator->writeParamsOld(eval_resultsFileOld, resOld) << "," << eval_lastStep << std::endl;
+
+  eval_externalClusterFile << passed_time << "," << eval_accumulatedPlanDuration << "," << eval_accumulatedPlanLength << ",";
+  external_cluster_evaluator->writeParams(eval_externalClusterFile, external_cluster_evaluator->getCurrentParams()) << "," << eval_lastStep << std::endl;
 
   writeVector(eval_fruitCellPercFile, passed_time, res.fruit_cell_percentages) << std::endl;
   writeVector(eval_volumeAccuracyFile, passed_time, res.volume_accuracies) << std::endl;
@@ -344,6 +353,7 @@ bool ViewpointPlanner::resetEvaluator()
 {
   eval_resultsFile.close();
   eval_resultsFileOld.close();
+  eval_externalClusterFile.close();
   eval_fruitCellPercFile.close();
   eval_volumeAccuracyFile.close();
   eval_distanceFile.close();
@@ -2117,7 +2127,11 @@ void ViewpointPlanner::resetOctomap()
   tree_mtx.unlock();
   if (!resetMoveitOctomapClient.call(emptySrv))
   {
-      ROS_ERROR("Failed to reset moveit octomap");
+    ROS_ERROR("Failed to reset moveit octomap");
+  }
+  if (!resetVoxbloxMapClient.call(emptySrv))
+  {
+    ROS_WARN("Failed to reset voxblox octomap");
   }
 
   publishMap();
