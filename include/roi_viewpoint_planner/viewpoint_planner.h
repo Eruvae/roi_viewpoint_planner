@@ -49,6 +49,7 @@ namespace std {
 #include <visualization_msgs/MarkerArray.h>
 
 #include <geometry_msgs/PoseArray.h>
+#include <std_srvs/Empty.h>
 
 #include <octomap_vpp/RoiOcTree.h>
 #include <octomap_vpp/CountingOcTree.h>
@@ -129,6 +130,9 @@ private:
   ros::ServiceClient requestExecutionConfirmation;
   ros::ServiceClient moveToSeeClient;
 
+  ros::ServiceClient resetMoveitOctomapClient;
+  std_srvs::Empty emptySrv;
+
   std::string bag_write_filename;
   std::string bag_final_filename;
   rosbag::Bag plannerBag;
@@ -188,6 +192,10 @@ private:
   double eval_accumulatedPlanDuration;
   double eval_accumulatedPlanLength;
   std::string eval_lastStep;
+  bool eval_randomize;
+  octomap::point3d eval_randomize_min;
+  octomap::point3d eval_randomize_max;
+  double eval_randomize_dist;
 
 public:
 
@@ -265,7 +273,8 @@ public:
   ~ViewpointPlanner();
 
   bool initializeEvaluator(ros::NodeHandle &nh, ros::NodeHandle &nhp);
-  bool startEvaluator(size_t numEvals, EvalEpisodeEndParam episodeEndParam, double episodeDuration, int start_index);
+  bool startEvaluator(size_t numEvals, EvalEpisodeEndParam episodeEndParam, double episodeDuration, int start_index,
+                      bool randomize_plants, const octomap::point3d &min, const octomap::point3d &max, double min_dist);
   void setEvaluatorStartParams();
   bool saveEvaluatorData(double plan_length, double traj_duration);
   bool resetEvaluator();
