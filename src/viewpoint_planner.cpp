@@ -46,6 +46,7 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, co
   eval_randomize_min(-1, -1, -0.1),
   eval_randomize_max(1, 1, 0.1),
   eval_randomize_dist(0.4),
+  shutdown_planner(false),
   random_engine(std::random_device{}())
 {
 
@@ -368,6 +369,12 @@ bool ViewpointPlanner::resetEvaluator()
   if(nhp.getParam("initial_joint_values", joint_start_values))
   {
     success = moveToState(joint_start_values, false, false);
+    if (!success)
+    {
+      ROS_ERROR("Couldn't move to home, shutting down");
+      eval_running = false;
+      shutdown_planner = true;
+    }
   }
   else
   {
@@ -381,6 +388,7 @@ bool ViewpointPlanner::resetEvaluator()
   else
   {
     eval_running = false;
+    shutdown_planner = true;
   }
 
   if (eval_randomize)
@@ -2148,7 +2156,7 @@ bool ViewpointPlanner::randomizePlantPositions(const geometry_msgs::Point &min, 
 
 void ViewpointPlanner::plannerLoop()
 {
-  for (ros::Rate rate(100); ros::ok(); rate.sleep())
+  for (ros::Rate rate(100); ros::ok() && !shutdown_planner; rate.sleep())
   {
     plannerLoopOnce();
   }

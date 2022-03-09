@@ -202,6 +202,8 @@ private:
   octomap::point3d eval_randomize_max;
   double eval_randomize_dist;
 
+  std::atomic_bool shutdown_planner;
+
 public:
 
   // Planner parameters
