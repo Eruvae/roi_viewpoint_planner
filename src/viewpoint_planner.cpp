@@ -270,6 +270,11 @@ void ViewpointPlanner::setEvaluatorStartParams()
   eval_fruitCellPercFile = std::ofstream("results_fruit_cells_" + file_index_str + ".csv");
   eval_volumeAccuracyFile = std::ofstream("results_volume_accuracy_" + file_index_str + ".csv");
   eval_distanceFile = std::ofstream("results_distances_" + file_index_str + ".csv");
+  eval_ecDistanceFile = std::ofstream("results_ec_dist_" + file_index_str + ".csv");
+  eval_ecVolAccFile = std::ofstream("results_ec_volacc_" + file_index_str + ".csv");
+  eval_ecVolAccBbxFile = std::ofstream("results_ec_volaccbbx_" + file_index_str + ".csv");
+  eval_ecVolRatioFile = std::ofstream("results_ec_volrat_" + file_index_str + ".csv");
+  eval_ecVolRatioBbxFile = std::ofstream("results_ec_volratbbx_" + file_index_str + ".csv");
   eval_resultsFile << "Time (s),Plan duration (s),Plan Length,";
   evaluator->writeHeader(eval_resultsFile) << ",Step" << std::endl;
   eval_resultsFileOld << "Time (s),Plan duration (s),Plan Length,";
@@ -306,6 +311,7 @@ bool ViewpointPlanner::saveEvaluatorData(double plan_length, double traj_duratio
 
   rvp_evaluation::EvaluationParameters res = evaluator->processDetectedRois(true, eval_start_index + eval_trial_num, static_cast<size_t>(passed_time));
   rvp_evaluation::EvaluationParametersOld resOld = evaluator->processDetectedRoisOld();
+  rvp_evaluation::ECEvalParams resEC = external_cluster_evaluator->getCurrentParams();
 
   eval_resultsFile << passed_time << "," << eval_accumulatedPlanDuration << "," << eval_accumulatedPlanLength << ",";
   evaluator->writeParams(eval_resultsFile, res) << "," << eval_lastStep << std::endl;
@@ -314,11 +320,16 @@ bool ViewpointPlanner::saveEvaluatorData(double plan_length, double traj_duratio
   evaluator->writeParamsOld(eval_resultsFileOld, resOld) << "," << eval_lastStep << std::endl;
 
   eval_externalClusterFile << passed_time << "," << eval_accumulatedPlanDuration << "," << eval_accumulatedPlanLength << ",";
-  external_cluster_evaluator->writeParams(eval_externalClusterFile, external_cluster_evaluator->getCurrentParams()) << "," << eval_lastStep << std::endl;
+  external_cluster_evaluator->writeParams(eval_externalClusterFile, resEC) << "," << eval_lastStep << std::endl;
 
   writeVector(eval_fruitCellPercFile, passed_time, res.fruit_cell_percentages) << std::endl;
   writeVector(eval_volumeAccuracyFile, passed_time, res.volume_accuracies) << std::endl;
   writeVector(eval_distanceFile, passed_time, res.distances) << std::endl;
+  writeVector(eval_ecDistanceFile, passed_time, resEC.distances) << std::endl;
+  writeVector(eval_ecVolAccFile, passed_time, resEC.volume_accuracies) << std::endl;
+  writeVector(eval_ecVolAccBbxFile, passed_time, resEC.volume_accuracies_bbx) << std::endl;
+  writeVector(eval_ecVolRatioFile, passed_time, resEC.volume_ratios) << std::endl;
+  writeVector(eval_ecVolRatioBbxFile, passed_time, resEC.volume_ratios_bbx) << std::endl;
 
   switch (eval_epEndParam)
   {
@@ -358,6 +369,11 @@ bool ViewpointPlanner::resetEvaluator()
   eval_fruitCellPercFile.close();
   eval_volumeAccuracyFile.close();
   eval_distanceFile.close();
+  eval_ecDistanceFile.close();
+  eval_ecVolAccFile.close();
+  eval_ecVolAccBbxFile.close();
+  eval_ecVolRatioFile.close();
+  eval_ecVolRatioBbxFile.close();
   timeLogger.initNewFile();
   eval_trial_num++;
 
@@ -2033,7 +2049,7 @@ bool ViewpointPlanner::safeExecutePlan(const moveit::planning_interface::MoveGro
     timeLogger.saveTime(TimeLogger::EVALUATED);
   }
 
-  return true;
+  return res;
 }
 
 bool ViewpointPlanner::executePlan(const moveit::planning_interface::MoveGroupInterface::Plan &plan, bool async)
@@ -2044,7 +2060,8 @@ bool ViewpointPlanner::executePlan(const moveit::planning_interface::MoveGroupIn
   else
     res = manipulator_group.execute(plan);
 
-  return (res == moveit::core::MoveItErrorCode::SUCCESS);
+  // Ignore failed during execution error for now
+  return (res == moveit::core::MoveItErrorCode::SUCCESS || res == moveit::core::MoveItErrorCode::CONTROL_FAILED);
 }
 
 bool ViewpointPlanner::saveTreeAsObj(const std::string &file_name)

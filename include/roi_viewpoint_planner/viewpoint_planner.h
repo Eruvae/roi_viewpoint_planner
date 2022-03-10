@@ -193,6 +193,11 @@ private:
   std::ofstream eval_fruitCellPercFile;
   std::ofstream eval_volumeAccuracyFile;
   std::ofstream eval_distanceFile;
+  std::ofstream eval_ecDistanceFile;
+  std::ofstream eval_ecVolAccFile;
+  std::ofstream eval_ecVolAccBbxFile;
+  std::ofstream eval_ecVolRatioFile;
+  std::ofstream eval_ecVolRatioBbxFile;
   ros::Time eval_plannerStartTime;
   double eval_accumulatedPlanDuration;
   double eval_accumulatedPlanLength;
