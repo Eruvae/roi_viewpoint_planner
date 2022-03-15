@@ -267,7 +267,6 @@ void ViewpointPlanner::setEvaluatorStartParams()
   eval_resultsFile = std::ofstream("planner_results_" + file_index_str + ".csv");
   eval_resultsFileOld = std::ofstream("planner_results_old" + file_index_str + ".csv");
   eval_externalClusterFile = std::ofstream("planner_results_ec" + file_index_str + ".csv");
-  eval_externalClusterFileMinAcc50 = std::ofstream("planner_results_ec_ma50_" + file_index_str + ".csv");
   eval_fruitCellPercFile = std::ofstream("results_fruit_cells_" + file_index_str + ".csv");
   eval_volumeAccuracyFile = std::ofstream("results_volume_accuracy_" + file_index_str + ".csv");
   eval_distanceFile = std::ofstream("results_distances_" + file_index_str + ".csv");
@@ -282,8 +281,6 @@ void ViewpointPlanner::setEvaluatorStartParams()
   evaluator->writeHeaderOld(eval_resultsFileOld) << ",Step" << std::endl;
   eval_externalClusterFile << "Time (s),Plan duration (s),Plan Length,";
   external_cluster_evaluator->writeHeader(eval_externalClusterFile) << ",Step" << std::endl;
-  eval_externalClusterFileMinAcc50 << "Time (s),Plan duration (s),Plan Length,";
-  external_cluster_evaluator->writeHeader(eval_externalClusterFileMinAcc50) << ",Step" << std::endl;
   eval_plannerStartTime = ros::Time::now();
   eval_accumulatedPlanDuration = 0;
   eval_accumulatedPlanLength = 0;
@@ -324,9 +321,6 @@ bool ViewpointPlanner::saveEvaluatorData(double plan_length, double traj_duratio
 
   eval_externalClusterFile << passed_time << "," << eval_accumulatedPlanDuration << "," << eval_accumulatedPlanLength << ",";
   external_cluster_evaluator->writeParams(eval_externalClusterFile, resEC) << "," << eval_lastStep << std::endl;
-
-  eval_externalClusterFileMinAcc50 << passed_time << "," << eval_accumulatedPlanDuration << "," << eval_accumulatedPlanLength << ",";
-  external_cluster_evaluator->writeParamsMinAcc50(eval_externalClusterFileMinAcc50, resEC) << "," << eval_lastStep << std::endl;
 
   writeVector(eval_fruitCellPercFile, passed_time, res.fruit_cell_percentages) << std::endl;
   writeVector(eval_volumeAccuracyFile, passed_time, res.volume_accuracies) << std::endl;
@@ -372,7 +366,6 @@ bool ViewpointPlanner::resetEvaluator()
   eval_resultsFile.close();
   eval_resultsFileOld.close();
   eval_externalClusterFile.close();
-  eval_externalClusterFileMinAcc50.close();
   eval_fruitCellPercFile.close();
   eval_volumeAccuracyFile.close();
   eval_distanceFile.close();

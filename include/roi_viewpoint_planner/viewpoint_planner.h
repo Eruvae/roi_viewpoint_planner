@@ -190,7 +190,6 @@ private:
   std::ofstream eval_resultsFile;
   std::ofstream eval_resultsFileOld;
   std::ofstream eval_externalClusterFile;
-  std::ofstream eval_externalClusterFileMinAcc50;
   std::ofstream eval_fruitCellPercFile;
   std::ofstream eval_volumeAccuracyFile;
   std::ofstream eval_distanceFile;
