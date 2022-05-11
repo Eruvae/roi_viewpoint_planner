@@ -8,6 +8,8 @@ Plan viewpoints to detect and scan regions of interest
 
 [rqt_roi_viewpoint_planner](https://github.com/Eruvae/rqt_roi_viewpoint_planner): [RQT](http://wiki.ros.org/rqt) plugin to control the planner.
 
+[rvp_evaluation](https://github.com/Eruvae/rvp_evaluation): Contains classes to read ground truth in simulation and perform evaluation. **Note**: This package uses [Open3D](https://github.com/isl-org/Open3D) to read the ground truth, which needs to be installed. You may use the [install_open3d.sh](https://github.com/Eruvae/rvp_evaluation/blob/main/install_open3d.sh) script or refer to the Open3D documentation for installation.
+
 [octomap_vpp](https://github.com/Eruvae/octomap_vpp): Extends the [octomap framework](http://octomap.github.io/) with octrees used by the planner.
 
 [octomap_vpp_rviz_plugin](https://github.com/Eruvae/octomap_vpp_rviz_plugin): Visualization plugin for custom octrees in rviz.
