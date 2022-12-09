@@ -22,6 +22,7 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, co
   workspaceTree(nullptr),
   samplingTree(nullptr),
   evaluator(nullptr),
+  motion_manager(new RobotManager(this, map_frame)),
   wsMin(-FLT_MAX, -FLT_MAX, -FLT_MAX),
   wsMax(FLT_MAX, FLT_MAX, FLT_MAX),
   stMin(-FLT_MAX, -FLT_MAX, -FLT_MAX),
@@ -30,11 +31,6 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, co
   tfListener(tfBuffer),
   depthCloudSub(nh, PC_TOPIC, 1),
   tfCloudFilter(depthCloudSub, tfBuffer, map_frame, 100, nh),
-  manipulator_group("manipulator"),
-  robot_model_loader("robot_description"),
-  kinematic_model(robot_model_loader.getModel()),
-  joint_model_group(kinematic_model->getJointModelGroup("manipulator")),
-  kinematic_state(new robot_state::RobotState(kinematic_model)),
   mode(IDLE),
   loop_state(NORMAL),
   execute_plan(false),
@@ -82,8 +78,6 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, co
 
   resetMoveitOctomapClient = nh.serviceClient<std_srvs::Empty>("/clear_octomap");
   resetVoxbloxMapClient = nh.serviceClient<std_srvs::Empty>("/voxblox_node/clear_map");
-
-  setPoseReferenceFrame(map_frame);
 
   // Load workspace
 
@@ -184,7 +178,7 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, co
 
   if (workspaceTree)
   {
-    manipulator_group.setWorkspace(wsMin.x(), wsMin.y(), wsMin.z(), wsMax.x(), wsMax.y(), wsMax.z());
+    motion_manager->setWorkspace(wsMin.x(), wsMin.y(), wsMin.z(), wsMax.x(), wsMax.y(), wsMax.z());
 
     visualization_msgs::Marker ws_cube;
     ws_cube.header.frame_id = ws_frame;
@@ -384,7 +378,7 @@ bool ViewpointPlanner::resetEvaluator()
   std::vector<double> joint_start_values;
   if(nhp.getParam("initial_joint_values", joint_start_values))
   {
-    success = moveToState(joint_start_values, false, false);
+    success = motion_manager->moveToState(joint_start_values, false, false);
     if (!success)
     {
       ROS_ERROR("Couldn't move to home, shutting down");
@@ -954,7 +948,7 @@ void ViewpointPlanner::sampleAroundROICenter(const octomap::point3d &center, con
     visualization_msgs::Marker marker;
     marker.header.frame_id = map_frame;
     marker.header.stamp = ros::Time();
-    marker.ns = "roiPoints" + roiID;
+    marker.ns = "roiPoints" + std::to_string(roiID);
     marker.id = i;
     marker.type = visualization_msgs::Marker::ARROW;
     marker.action = visualization_msgs::Marker::ADD;
@@ -980,7 +974,7 @@ void ViewpointPlanner::sampleAroundROICenter(const octomap::point3d &center, con
     visualization_msgs::Marker textMarker;
     textMarker.header.frame_id = map_frame;
     textMarker.header.stamp = ros::Time();
-    textMarker.ns = "roiPoints_texts" + roiID;
+    textMarker.ns = "roiPoints_texts" + std::to_string(roiID);
     textMarker.id = i;
     textMarker.type = visualization_msgs::Marker::TEXT_VIEW_FACING;
     textMarker.action = visualization_msgs::Marker::ADD;
@@ -1366,14 +1360,10 @@ std::vector<Viewpoint> ViewpointPlanner::sampleAroundMultiROICenters(const std::
       }
       if (compute_ik_when_sampling)
       {
-        if (!manipulator_group.setJointValueTarget(transformToWorkspace(vp.pose), "camera_link"))
+        if (!motion_manager->setJointValueTarget(transformToWorkspace(vp.pose)))
           continue;
 
-      #if ROS_VERSION_MAJOR == 1 && ROS_VERSION_MINOR <= 14 // ROS melodic or older
-        vp.joint_target.reset(new robot_state::RobotState(manipulator_group.getJointValueTarget()));
-      #else
-        manipulator_group.getJointValueTarget(vp.joint_target);
-      #endif
+        motion_manager->getJointValueTarget(vp.joint_target);
       }
 
       planningTree->computeRayKeys(center, spherePoint, ray);
@@ -1494,14 +1484,10 @@ std::vector<Viewpoint> ViewpointPlanner::sampleContourPoints(const octomap::poin
     }
     if (compute_ik_when_sampling)
     {
-      if (!manipulator_group.setJointValueTarget(transformToWorkspace(vp.pose), "camera_link"))
+      if (!motion_manager->setJointValueTarget(transformToWorkspace(vp.pose)))
         continue;
 
-    #if ROS_VERSION_MAJOR == 1 && ROS_VERSION_MINOR <= 14 // ROS melodic or older
-      vp.joint_target.reset(new robot_state::RobotState(manipulator_group.getJointValueTarget()));
-    #else
-      manipulator_group.getJointValueTarget(vp.joint_target);
-    #endif
+      motion_manager->getJointValueTarget(vp.joint_target);
     }
     octomap_vpp::RoiOcTreeNode *node = planningTree->search(vpOrig);
     if (node != NULL && node->getLogOdds() > 0) // Node is occupied
@@ -1601,14 +1587,10 @@ std::vector<Viewpoint> ViewpointPlanner::sampleRoiContourPoints(const octomap::p
     }
     if (compute_ik_when_sampling)
     {
-      if (!manipulator_group.setJointValueTarget(transformToWorkspace(vp.pose), "camera_link"))
+      if (!motion_manager->setJointValueTarget(transformToWorkspace(vp.pose)))
         continue;
 
-    #if ROS_VERSION_MAJOR == 1 && ROS_VERSION_MINOR <= 14 // ROS melodic or older
-      vp.joint_target.reset(new robot_state::RobotState(manipulator_group.getJointValueTarget()));
-    #else
-      manipulator_group.getJointValueTarget(vp.joint_target);
-    #endif
+      motion_manager->getJointValueTarget(vp.joint_target);
     }
 
     planningTree->computeRayKeys(target, spherePoint, ray);
@@ -1711,14 +1693,10 @@ std::vector<Viewpoint> ViewpointPlanner::sampleRoiAdjecentCountours(const octoma
     }
     if (compute_ik_when_sampling)
     {
-      if (!manipulator_group.setJointValueTarget(transformToWorkspace(vp.pose), "camera_link"))
+      if (!motion_manager->setJointValueTarget(transformToWorkspace(vp.pose)))
         continue;
 
-    #if ROS_VERSION_MAJOR == 1 && ROS_VERSION_MINOR <= 14 // ROS melodic or older
-      vp.joint_target.reset(new robot_state::RobotState(manipulator_group.getJointValueTarget()));
-    #else
-      manipulator_group.getJointValueTarget(vp.joint_target);
-    #endif
+      motion_manager->getJointValueTarget(vp.joint_target);
     }
 
     planningTree->computeRayKeys(target, spherePoint, ray);
@@ -1811,14 +1789,10 @@ std::vector<Viewpoint> ViewpointPlanner::sampleExplorationPoints(const octomap::
     }
     if (compute_ik_when_sampling)
     {
-      if (!manipulator_group.setJointValueTarget(transformToWorkspace(vp.pose), "camera_link"))
+      if (!motion_manager->setJointValueTarget(transformToWorkspace(vp.pose)))
         continue;
 
-    #if ROS_VERSION_MAJOR == 1 && ROS_VERSION_MINOR <= 14 // ROS melodic or older
-      vp.joint_target.reset(new robot_state::RobotState(manipulator_group.getJointValueTarget()));
-    #else
-      manipulator_group.getJointValueTarget(vp.joint_target);
-    #endif
+      motion_manager->getJointValueTarget(vp.joint_target);
     }
 
     vp.target = target;
@@ -1882,14 +1856,10 @@ std::vector<Viewpoint> ViewpointPlanner::sampleBorderPoints(const octomap::point
 
     if (compute_ik_when_sampling)
     {
-      if (!manipulator_group.setJointValueTarget(transformToWorkspace(vp.pose), "camera_link"))
+      if (!motion_manager->setJointValueTarget(transformToWorkspace(vp.pose)))
         continue;
 
-    #if ROS_VERSION_MAJOR == 1 && ROS_VERSION_MINOR <= 14 // ROS melodic or older
-      vp.joint_target.reset(new robot_state::RobotState(manipulator_group.getJointValueTarget()));
-    #else
-      manipulator_group.getJointValueTarget(vp.joint_target);
-    #endif
+      motion_manager->getJointValueTarget(vp.joint_target);
     }
 
 
@@ -1929,139 +1899,6 @@ robot_state::RobotStatePtr ViewpointPlanner::sampleNextRobotState(const robot_st
     }
   }
   return maxState;
-}
-
-bool ViewpointPlanner::moveToPoseCartesian(const geometry_msgs::Pose &goal_pose, bool async, bool safe)
-{
-  std::vector<geometry_msgs::Pose> waypoints;
-  waypoints.push_back(goal_pose);
-  moveit_msgs::RobotTrajectory trajectory;
-  const double eef_step = 0.005;
-  const double jump_threshold = 0.0;
-  double fraction = manipulator_group.computeCartesianPath(waypoints, eef_step, jump_threshold, trajectory);
-  if (fraction > 0.95) // execute plan if at least 95% of goal reached
-  {
-    moveit::planning_interface::MoveGroupInterface::Plan plan;
-    plan.trajectory_= trajectory;
-    if (safe)
-      return safeExecutePlan(plan, async);
-    else
-      return executePlan(plan, async);
-  }
-  return false;
-}
-
-bool ViewpointPlanner::moveToPose(const geometry_msgs::Pose &goal_pose, bool async, bool safe)
-{
-  ros::Time setTargetTime = ros::Time::now();
-  if (!manipulator_group.setJointValueTarget(goal_pose, "camera_link"))
-  {
-    ROS_INFO_STREAM("Could not find IK for specified pose (Timeout: " << (ros::Time::now() - setTargetTime) << ")");
-    return false;
-  }
-  ROS_INFO_STREAM("IK solve time: " << (ros::Time::now() - setTargetTime));
-
-  return planAndExecuteFromMoveGroup(async, safe);
-}
-
-bool ViewpointPlanner::moveToState(const robot_state::RobotStateConstPtr &goal_state, bool async, bool safe)
-{
-  if (!manipulator_group.setJointValueTarget(*goal_state))
-  {
-    ROS_INFO_STREAM("Couldn't set joint target, make sure values are in bounds");
-    return false;
-  }
-
-  return planAndExecuteFromMoveGroup(async, safe);
-}
-
-bool ViewpointPlanner::moveToState(const std::vector<double> &joint_values, bool async, bool safe)
-{
-  if (!manipulator_group.setJointValueTarget(joint_values))
-  {
-    ROS_INFO_STREAM("Couldn't set joint target, make sure values are in bounds");
-    return false;
-  }
-
-  return planAndExecuteFromMoveGroup(async, safe);
-}
-
-bool ViewpointPlanner::planAndExecuteFromMoveGroup(bool async, bool safe)
-{
-  moveit::planning_interface::MoveGroupInterface::Plan plan;
-  ros::Time planStartTime = ros::Time::now();
-  moveit::core::MoveItErrorCode res = manipulator_group.plan(plan);
-  ROS_INFO_STREAM("Planning duration: " << (ros::Time::now() - planStartTime));
-  if (res != moveit::core::MoveItErrorCode::SUCCESS)
-  {
-    ROS_INFO("Could not find plan");
-    return false;
-  }
-  if (safe)
-    return safeExecutePlan(plan, async);
-  else
-    return executePlan(plan, async);
-}
-
-bool ViewpointPlanner::safeExecutePlan(const moveit::planning_interface::MoveGroupInterface::Plan &plan, bool async)
-{
-  if (require_execution_confirmation)
-  {
-    std_srvs::Trigger requestExecution;
-    if (!requestExecutionConfirmation.call(requestExecution) || !requestExecution.response.success)
-    {
-      ROS_INFO_STREAM("Plan execution denied");
-      return false;
-    }
-  }
-
-  robotIsMoving.store(true);
-  scanInserted.store(false);
-  if (publish_planning_state)
-  {
-    state.robot_is_moving = true;
-    state.scan_inserted = false;
-    plannerStatePub.publish(state);
-  }
-
-  bool res = executePlan(plan, async);
-
-  robotIsMoving.store(false);
-  if (publish_planning_state)
-  {
-    state.robot_is_moving = false;
-    plannerStatePub.publish(state);
-  }
-
-  timeLogger.saveTime(TimeLogger::PLAN_EXECUTED);
-
-  /*if (!res)
-  {
-    ROS_INFO("Could not execute plan");
-    return false;
-  }*/
-
-  if (eval_running)
-  {
-    for (ros::Rate r(100); !scanInserted; r.sleep()); // wait for scan
-    timeLogger.saveTime(TimeLogger::WAITED_FOR_SCAN);
-    saveEvaluatorData(rvp_evaluation::computeTrajectoryLength(plan), rvp_evaluation::getTrajectoryDuration(plan));
-    timeLogger.saveTime(TimeLogger::EVALUATED);
-  }
-
-  return res;
-}
-
-bool ViewpointPlanner::executePlan(const moveit::planning_interface::MoveGroupInterface::Plan &plan, bool async)
-{
-  moveit::core::MoveItErrorCode res;
-  if (async)
-    res = manipulator_group.asyncExecute(plan);
-  else
-    res = manipulator_group.execute(plan);
-
-  // Ignore failed during execution error for now
-  return (res == moveit::core::MoveItErrorCode::SUCCESS || res == moveit::core::MoveItErrorCode::CONTROL_FAILED);
 }
 
 bool ViewpointPlanner::saveTreeAsObj(const std::string &file_name)
@@ -2248,7 +2085,7 @@ bool ViewpointPlanner::plannerLoopOnce()
 
           eval_lastStep = "M2S";
           timeLogger.saveTime(TimeLogger::MOVE_TO_SEE_APPLIED);
-          if (execute_plan && moveToPose(transformToWorkspace(commandPose)))
+          if (execute_plan && motion_manager->moveToPose(transformToWorkspace(commandPose)))
           {
             ROS_INFO_STREAM("Succesfully moving with move to see");
             m2s_success = true;
@@ -2388,7 +2225,7 @@ bool ViewpointPlanner::plannerLoopOnce()
     }*/
     if (use_cartesian_motion)
     {
-      if (moveToPoseCartesian(transformToWorkspace(vp.pose)))
+      if (motion_manager->moveToPoseCartesian(transformToWorkspace(vp.pose)))
       {
         move_success = true;
         break;
@@ -2398,7 +2235,7 @@ bool ViewpointPlanner::plannerLoopOnce()
     {
       if (compute_ik_when_sampling)
       {
-        if (moveToState(vp.joint_target))
+        if (motion_manager->moveToState(vp.joint_target))
         {
           move_success = true;
           break;
@@ -2406,7 +2243,7 @@ bool ViewpointPlanner::plannerLoopOnce()
       }
       else
       {
-        if (moveToPose(transformToWorkspace(vp.pose)))
+        if (motion_manager->moveToPose(transformToWorkspace(vp.pose)))
         {
           move_success = true;
           break;

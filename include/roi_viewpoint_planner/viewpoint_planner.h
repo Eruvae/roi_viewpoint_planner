@@ -64,6 +64,7 @@ namespace std {
 #include <rvp_evaluation/evaluator.h>
 #include <rvp_evaluation/evaluator_external_clusters.h>
 #include "roi_viewpoint_planner/octree_provider_interfaces/direct_planner_interface.h"
+#include "roi_viewpoint_planner/motion_manager/robot_manager.h"
 
 #include "roi_viewpoint_planner/time_logger.h"
 
@@ -104,6 +105,9 @@ class ViewpointPlanner
   // Planner interface friends
   friend class DirectPlannerInterface;
 
+  // Motion manager friends
+  friend class RobotManager;
+
 private:
   ros::NodeHandle &nh;
   ros::NodeHandle &nhp;
@@ -112,6 +116,8 @@ private:
   octomap_vpp::WorkspaceOcTree *samplingTree;
   std::unique_ptr<rvp_evaluation::Evaluator> evaluator;
   std::unique_ptr<rvp_evaluation::ExternalClusterEvaluator> external_cluster_evaluator;
+
+  std::unique_ptr<RobotManager> motion_manager;
 
   octomap::point3d wsMin, wsMax;
   octomap::point3d stMin, stMax;
@@ -156,13 +162,6 @@ private:
   //message_filters::Synchronizer<DetsSyncPolicy> syncDets(DetsSyncPolicy(50), pcGlobalSub, detectionsSub);
 
   ros::Subscriber roiSub;
-
-  moveit::planning_interface::MoveGroupInterface manipulator_group;
-
-  robot_model_loader::RobotModelLoader robot_model_loader;
-  robot_model::RobotModelPtr kinematic_model;
-  const robot_state::JointModelGroup* joint_model_group;
-  robot_state::RobotStatePtr kinematic_state;
 
   std::atomic_bool robotIsMoving;
   std::atomic_bool scanInserted;
@@ -291,6 +290,11 @@ public:
   bool saveEvaluatorData(double plan_length, double traj_duration);
   bool resetEvaluator();
 
+  RobotManager* getMotionManager()
+  {
+    return motion_manager.get();
+  }
+
   std::shared_ptr<octomap_vpp::RoiOcTree> getPlanningTree()
   {
     return planningTree;
@@ -299,28 +303,6 @@ public:
   boost::mutex& getTreeMutex()
   {
     return tree_mtx;
-  }
-
-  // Set planner parameters
-
-  void setPoseReferenceFrame(const std::string& pose_reference_frame)
-  {
-    manipulator_group.setPoseReferenceFrame(pose_reference_frame);
-  }
-
-  void setPlannerId(const std::string& planner_id)
-  {
-    manipulator_group.setPlannerId(planner_id);
-  }
-
-  void setPlanningTime(double seconds)
-  {
-    manipulator_group.setPlanningTime(seconds);
-  }
-
-  void setMaxVelocityScalingFactor(double max_velocity_scaling_factor)
-  {
-    manipulator_group.setMaxVelocityScalingFactor(max_velocity_scaling_factor);
   }
 
   //void publishOctomapToPlanningScene(const octomap_msgs::Octomap &map_msg);
@@ -397,20 +379,6 @@ public:
   std::vector<Viewpoint> sampleBorderPoints(const octomap::point3d &pmin, const octomap::point3d &pmax, const octomap::point3d &camPos, const tf2::Quaternion &camQuat);
 
   robot_state::RobotStatePtr sampleNextRobotState(const robot_state::JointModelGroup *joint_model_group, const robot_state::RobotState &current_state);
-
-  bool moveToPoseCartesian(const geometry_msgs::Pose &goal_pose, bool async=false, bool safe=true);
-
-  bool moveToPose(const geometry_msgs::Pose &goal_pose, bool async=false, bool safe=true);
-
-  bool moveToState(const moveit::core::RobotStateConstPtr &goal_state, bool async=false, bool safe=true);
-
-  bool moveToState(const std::vector<double> &joint_values, bool async=false, bool safe=true);
-
-  bool planAndExecuteFromMoveGroup(bool async, bool safe);
-
-  bool safeExecutePlan(const moveit::planning_interface::MoveGroupInterface::Plan &plan, bool async);
-
-  bool executePlan(const moveit::planning_interface::MoveGroupInterface::Plan &plan, bool async);
 
   bool saveTreeAsObj(const std::string &file_name);
 

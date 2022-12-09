@@ -90,7 +90,7 @@ bool resetPlanner(roi_viewpoint_planner_msgs::ResetPlanner::Request &req, roi_vi
   std::vector<double> joint_start_values;
   if(nhp_pt->getParam("initial_joint_values", joint_start_values))
   {
-    res.success = planner->moveToState(joint_start_values, req.async, false);
+    res.success = planner->getMotionManager()->moveToState(joint_start_values, req.async, false);
   }
   else
   {
@@ -101,7 +101,7 @@ bool resetPlanner(roi_viewpoint_planner_msgs::ResetPlanner::Request &req, roi_vi
 
 bool moveToState(roi_viewpoint_planner_msgs::MoveToState::Request &req, roi_viewpoint_planner_msgs::MoveToState::Response &res)
 {
-  res.success = planner->moveToState(req.joint_values, req.async, false);
+  res.success = planner->getMotionManager()->moveToState(req.joint_values, req.async, false);
   return true;
 }
 
@@ -163,11 +163,11 @@ void reconfigureCallback(roi_viewpoint_planner::PlannerConfig &config, uint32_t 
   }
   if (level & (1 << 12)) // planner
   {
-    planner->setPlannerId(config.planner);
+    planner->getMotionManager()->setPlannerId(config.planner);
   }
   if (level & (1 << 13)) // planning_time
   {
-    planner->setPlanningTime(config.planning_time);
+    planner->getMotionManager()->setPlanningTime(config.planning_time);
   }
   if (level & (1 << 14)) // use_cartesian_motion
   {
@@ -179,7 +179,7 @@ void reconfigureCallback(roi_viewpoint_planner::PlannerConfig &config, uint32_t 
   }
   if (level & (1 << 16)) // velocity_scaling
   {
-    planner->setMaxVelocityScalingFactor(config.velocity_scaling);
+    planner->getMotionManager()->setMaxVelocityScalingFactor(config.velocity_scaling);
   }
   if (level & (1 << 17)) // record_map_updates
   {
@@ -248,7 +248,7 @@ int main(int argc, char **argv)
   std::vector<double> joint_start_values;
   if(nhp.getParam("initial_joint_values", joint_start_values))
   {
-    planner->moveToState(joint_start_values, false, false);
+    planner->getMotionManager()->moveToState(joint_start_values, false, false);
   }
   else
   {

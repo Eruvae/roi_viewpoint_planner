@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8.3)
+cmake_minimum_required(VERSION 3.0.2)
 project(roi_viewpoint_planner)
 
 add_compile_options(-std=c++17)
@@ -163,6 +163,7 @@ set(VIEWPOINT_PLANNER_SRC_FILES
   src/viewpoint_samplers.cpp
   src/viewpoint_utilities.cpp
   src/octree_provider_interfaces/direct_planner_interface.cpp
+  src/motion_manager/robot_manager.cpp
 )
 
 ## Declare a C++ library
