@@ -22,7 +22,6 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, co
   workspaceTree(nullptr),
   samplingTree(nullptr),
   evaluator(nullptr),
-  motion_manager(new RobotManager(this, map_frame)),
   wsMin(-FLT_MAX, -FLT_MAX, -FLT_MAX),
   wsMax(FLT_MAX, FLT_MAX, FLT_MAX),
   stMin(-FLT_MAX, -FLT_MAX, -FLT_MAX),
@@ -45,6 +44,15 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, co
   shutdown_planner(false),
   random_engine(std::random_device{}())
 {
+  std::string motion_manager_name = nhp.param<std::string>("motion_manager", "RobotManager");
+  if (motion_manager_name == "DirectPointMotion")
+  {
+    motion_manager.reset(new DirectPointMotion(this, map_frame));
+  }
+  else // default to robot manager
+  {
+    motion_manager.reset(new RobotManager(this, map_frame));
+  }
 
   std::stringstream fDateTime;
   const boost::posix_time::ptime curDateTime = boost::posix_time::second_clock::local_time();
@@ -1360,10 +1368,8 @@ std::vector<Viewpoint> ViewpointPlanner::sampleAroundMultiROICenters(const std::
       }
       if (compute_ik_when_sampling)
       {
-        if (!motion_manager->setJointValueTarget(transformToWorkspace(vp.pose)))
+        if (!motion_manager->getJointValuesFromPose(transformToWorkspace(vp.pose), vp.joint_target))
           continue;
-
-        motion_manager->getJointValueTarget(vp.joint_target);
       }
 
       planningTree->computeRayKeys(center, spherePoint, ray);
@@ -1484,10 +1490,8 @@ std::vector<Viewpoint> ViewpointPlanner::sampleContourPoints(const octomap::poin
     }
     if (compute_ik_when_sampling)
     {
-      if (!motion_manager->setJointValueTarget(transformToWorkspace(vp.pose)))
+      if (!motion_manager->getJointValuesFromPose(transformToWorkspace(vp.pose), vp.joint_target))
         continue;
-
-      motion_manager->getJointValueTarget(vp.joint_target);
     }
     octomap_vpp::RoiOcTreeNode *node = planningTree->search(vpOrig);
     if (node != NULL && node->getLogOdds() > 0) // Node is occupied
@@ -1587,10 +1591,8 @@ std::vector<Viewpoint> ViewpointPlanner::sampleRoiContourPoints(const octomap::p
     }
     if (compute_ik_when_sampling)
     {
-      if (!motion_manager->setJointValueTarget(transformToWorkspace(vp.pose)))
+      if (!motion_manager->getJointValuesFromPose(transformToWorkspace(vp.pose), vp.joint_target))
         continue;
-
-      motion_manager->getJointValueTarget(vp.joint_target);
     }
 
     planningTree->computeRayKeys(target, spherePoint, ray);
@@ -1693,10 +1695,8 @@ std::vector<Viewpoint> ViewpointPlanner::sampleRoiAdjecentCountours(const octoma
     }
     if (compute_ik_when_sampling)
     {
-      if (!motion_manager->setJointValueTarget(transformToWorkspace(vp.pose)))
+      if (!motion_manager->getJointValuesFromPose(transformToWorkspace(vp.pose), vp.joint_target))
         continue;
-
-      motion_manager->getJointValueTarget(vp.joint_target);
     }
 
     planningTree->computeRayKeys(target, spherePoint, ray);
@@ -1789,10 +1789,8 @@ std::vector<Viewpoint> ViewpointPlanner::sampleExplorationPoints(const octomap::
     }
     if (compute_ik_when_sampling)
     {
-      if (!motion_manager->setJointValueTarget(transformToWorkspace(vp.pose)))
+      if (!motion_manager->getJointValuesFromPose(transformToWorkspace(vp.pose), vp.joint_target))
         continue;
-
-      motion_manager->getJointValueTarget(vp.joint_target);
     }
 
     vp.target = target;
@@ -1856,10 +1854,8 @@ std::vector<Viewpoint> ViewpointPlanner::sampleBorderPoints(const octomap::point
 
     if (compute_ik_when_sampling)
     {
-      if (!motion_manager->setJointValueTarget(transformToWorkspace(vp.pose)))
+      if (!motion_manager->getJointValuesFromPose(transformToWorkspace(vp.pose), vp.joint_target))
         continue;
-
-      motion_manager->getJointValueTarget(vp.joint_target);
     }
 
 

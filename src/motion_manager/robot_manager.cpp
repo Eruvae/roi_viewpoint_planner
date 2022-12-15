@@ -1,4 +1,5 @@
 #include "roi_viewpoint_planner/motion_manager/robot_manager.h"
+
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 #include <rvp_evaluation/rvp_utils.h>
 #include <std_srvs/Trigger.h>
@@ -8,24 +9,51 @@
 namespace roi_viewpoint_planner
 {
 
-RobotManager::RobotManager(ViewpointPlanner *parent, const std::string &pose_reference_frame,
-                           const std::string &robot_description_param_name,
-                           const std::string& group_name, const std::string &ee_link_name)
-  : parent(parent),
+RobotManager::RobotManager(ViewpointPlanner *parent, const std::string &pose_reference_frame, const std::string &end_effector_link,
+                           const std::string& group_name,  const std::string &robot_description_param_name)
+  : MotionManagerBase(parent, pose_reference_frame, end_effector_link),
     group_name(group_name),
-    manipulator_group(MoveGroupInterface::Options(group_name, robot_description_param_name)),
-    rml(new robot_model_loader::RobotModelLoader(robot_description_param_name)),
-    psm(new planning_scene_monitor::PlanningSceneMonitor(rml)),
-    kinematic_model(rml->getModel()),
-    jmg(kinematic_model->getJointModelGroup(group_name)),
-    kinematic_state(new robot_state::RobotState(kinematic_model)),
-    pose_reference_frame(pose_reference_frame),
-    end_effector_link(ee_link_name)
+    manipulator_group(MoveGroupInterface::Options(group_name, robot_description_param_name))
+    //rml(new robot_model_loader::RobotModelLoader(robot_description_param_name)),
+    //psm(new planning_scene_monitor::PlanningSceneMonitor(rml)),
+    //kinematic_model(rml->getModel()),
+    //jmg(kinematic_model->getJointModelGroup(group_name)),
+    //kinematic_state(new robot_state::RobotState(kinematic_model))
 {
   manipulator_group.setPoseReferenceFrame(pose_reference_frame);
+  manipulator_group.setEndEffectorLink(end_effector_link);
   //psm->startWorldGeometryMonitor();
-  psm->startStateMonitor("/joint_states");
-  psm->startSceneMonitor("/move_group/monitored_planning_scene");
+  //psm->startStateMonitor("/joint_states");
+  //psm->startSceneMonitor("/move_group/monitored_planning_scene");
+}
+
+void RobotManager::setWorkspace(double minx, double miny, double minz, double maxx, double maxy, double maxz)
+{
+  manipulator_group.setWorkspace(minx, miny, minz, maxx, maxy, maxz);
+}
+
+void RobotManager::setPlannerId(const std::string& planner_id)
+{
+  manipulator_group.setPlannerId(planner_id);
+}
+
+void RobotManager::setPlanningTime(double seconds)
+{
+  manipulator_group.setPlanningTime(seconds);
+}
+
+void RobotManager::setMaxVelocityScalingFactor(double max_velocity_scaling_factor)
+{
+  manipulator_group.setMaxVelocityScalingFactor(max_velocity_scaling_factor);
+}
+
+bool RobotManager::getJointValuesFromPose(const geometry_msgs::Pose &pose, std::vector<double> &joints)
+{
+  if (!manipulator_group.setJointValueTarget(pose, end_effector_link))
+    return false;
+
+  manipulator_group.getJointValueTarget(joints);
+  return true;
 }
 
 bool RobotManager::moveToPoseCartesian(const geometry_msgs::Pose &goal_pose, bool async, bool safe)
@@ -57,17 +85,6 @@ bool RobotManager::moveToPose(const geometry_msgs::Pose &goal_pose, bool async, 
     return false;
   }
   ROS_INFO_STREAM("IK solve time: " << (ros::Time::now() - setTargetTime));
-
-  return planAndExecuteFromMoveGroup(async, safe);
-}
-
-bool RobotManager::moveToState(const robot_state::RobotStateConstPtr &goal_state, bool async, bool safe)
-{
-  if (!manipulator_group.setJointValueTarget(*goal_state))
-  {
-    ROS_INFO_STREAM("Couldn't set joint target, make sure values are in bounds");
-    return false;
-  }
 
   return planAndExecuteFromMoveGroup(async, safe);
 }

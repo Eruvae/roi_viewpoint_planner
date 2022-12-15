@@ -38,13 +38,6 @@
 #include <algorithm>
 #include <unordered_set>
 
-#if defined(__GNUC__ ) && (__GNUC__  < 7) // GCC < 7 has sample only in experimental namespace
-#include <experimental/algorithm>
-namespace std {
-  using experimental::sample;
-}
-#endif
-
 #include <visualization_msgs/Marker.h>
 #include <visualization_msgs/MarkerArray.h>
 
@@ -64,7 +57,9 @@ namespace std {
 #include <rvp_evaluation/evaluator.h>
 #include <rvp_evaluation/evaluator_external_clusters.h>
 #include "roi_viewpoint_planner/octree_provider_interfaces/direct_planner_interface.h"
+#include "roi_viewpoint_planner/motion_manager/motion_manager_base.h"
 #include "roi_viewpoint_planner/motion_manager/robot_manager.h"
+#include "roi_viewpoint_planner/motion_manager/direct_point_motion.h"
 
 #include "roi_viewpoint_planner/time_logger.h"
 
@@ -106,7 +101,9 @@ class ViewpointPlanner
   friend class DirectPlannerInterface;
 
   // Motion manager friends
+  friend class MotionManagerBase;
   friend class RobotManager;
+  friend class DirectPointMotion;
 
 private:
   ros::NodeHandle &nh;
@@ -117,7 +114,7 @@ private:
   std::unique_ptr<rvp_evaluation::Evaluator> evaluator;
   std::unique_ptr<rvp_evaluation::ExternalClusterEvaluator> external_cluster_evaluator;
 
-  std::unique_ptr<RobotManager> motion_manager;
+  std::unique_ptr<MotionManagerBase> motion_manager;
 
   octomap::point3d wsMin, wsMax;
   octomap::point3d stMin, stMax;
@@ -290,7 +287,7 @@ public:
   bool saveEvaluatorData(double plan_length, double traj_duration);
   bool resetEvaluator();
 
-  RobotManager* getMotionManager()
+  MotionManagerBase* getMotionManager()
   {
     return motion_manager.get();
   }
