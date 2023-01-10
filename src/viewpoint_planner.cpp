@@ -19,13 +19,11 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, co
   planningTree(new octomap_vpp::RoiOcTree(tree_resolution)),
   map_frame(map_frame),
   ws_frame(ws_frame),
-  workspaceTree(nullptr),
-  samplingTree(nullptr),
   evaluator(nullptr),
   wsMin(-FLT_MAX, -FLT_MAX, -FLT_MAX),
   wsMax(FLT_MAX, FLT_MAX, FLT_MAX),
-  stMin(-FLT_MAX, -FLT_MAX, -FLT_MAX),
-  stMax(FLT_MAX, FLT_MAX, FLT_MAX),
+  srMin(-FLT_MAX, -FLT_MAX, -FLT_MAX),
+  srMax(FLT_MAX, FLT_MAX, FLT_MAX),
   tfBuffer(ros::Duration(30)),
   tfListener(tfBuffer),
   depthCloudSub(nh, PC_TOPIC, 1),
@@ -71,8 +69,6 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, co
   pointVisPub = nh.advertise<visualization_msgs::Marker>("border_marker", 1);
   viewArrowVisPub = nh.advertise<visualization_msgs::MarkerArray>("roi_vp_marker", 1);
   poseArrayPub = nh.advertise<geometry_msgs::PoseArray>("vp_array", 1);
-  workspaceTreePub = nh.advertise<octomap_msgs::Octomap>("workspace_tree", 1, true);
-  samplingTreePub = nh.advertise<octomap_msgs::Octomap>("sampling_tree", 1, true);
   cubeVisPub = nh.advertise<visualization_msgs::Marker>("cube_vis", 1, true);
 
   plannerStatePub = nhp.advertise<roi_viewpoint_planner_msgs::PlannerState>("planner_state", 1, true);
@@ -88,121 +84,6 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, co
   resetVoxbloxMapClient = nh.serviceClient<std_srvs::Empty>("/voxblox_node/clear_map");
 
   // Load workspace
-
-  octomap::AbstractOcTree *tree = octomap::AbstractOcTree::read(wstree_file);
-  if (!tree)
-  {
-    ROS_ERROR_STREAM("Workspace tree file could not be loaded");
-  }
-  else
-  {
-    octomap_vpp::CountingOcTree *countingTree = dynamic_cast<octomap_vpp::CountingOcTree*>(tree);
-
-    if (countingTree) // convert to workspace tree if counting tree loaded
-    {
-      workspaceTree = new octomap_vpp::WorkspaceOcTree(*countingTree);
-      delete countingTree;
-    }
-    else
-    {
-      workspaceTree = dynamic_cast<octomap_vpp::WorkspaceOcTree*>(tree);
-    }
-
-    if (!workspaceTree)
-    {
-      ROS_ERROR("Workspace tree type not recognized; please load either CountingOcTree or WorkspaceOcTree");
-      delete tree;
-    }
-    else
-    {
-      wsMin = octomap::point3d(FLT_MAX, FLT_MAX, FLT_MAX);
-      wsMax = octomap::point3d(-FLT_MAX, -FLT_MAX, -FLT_MAX);
-      for (auto it = workspaceTree->begin_leafs(), end = workspaceTree->end_leafs(); it != end; it++)
-      {
-        octomap::point3d coord = it.getCoordinate();
-        if (coord.x() < wsMin.x()) wsMin.x() = coord.x();
-        if (coord.y() < wsMin.y()) wsMin.y() = coord.y();
-        if (coord.z() < wsMin.z()) wsMin.z() = coord.z();
-        if (coord.x() > wsMax.x()) wsMax.x() = coord.x();
-        if (coord.y() > wsMax.y()) wsMax.y() = coord.y();
-        if (coord.z() > wsMax.z()) wsMax.z() = coord.z();
-      }
-
-      octomap_msgs::Octomap ws_msg;
-      ws_msg.header.frame_id = ws_frame;
-      ws_msg.header.stamp = ros::Time(0);
-      bool msg_generated = octomap_msgs::fullMapToMsg(*workspaceTree, ws_msg);
-      if (msg_generated)
-      {
-        workspaceTreePub.publish(ws_msg);
-      }
-    }
-  }
-
-  tree = octomap::AbstractOcTree::read(sampling_tree_file);
-  if (!tree)
-  {
-    ROS_ERROR_STREAM("Sampling tree file could not be loaded");
-  }
-  else
-  {
-    samplingTree = dynamic_cast<octomap_vpp::WorkspaceOcTree*>(tree);
-    if (!samplingTree)
-    {
-      ROS_ERROR("Sampling tree must be of type WorkspaceOcTree");
-      delete tree;
-    }
-  }
-
-  if (!samplingTree) // if sampling tree not specified, use workspace octree
-  {
-    samplingTree = workspaceTree;
-  }
-
-  if (samplingTree)
-  {
-    stMin = octomap::point3d(FLT_MAX, FLT_MAX, FLT_MAX);
-    stMax = octomap::point3d(-FLT_MAX, -FLT_MAX, -FLT_MAX);
-    for (auto it = samplingTree->begin_leafs(), end = samplingTree->end_leafs(); it != end; it++)
-    {
-      octomap::point3d coord = it.getCoordinate();
-      if (coord.x() < stMin.x()) stMin.x() = coord.x();
-      if (coord.y() < stMin.y()) stMin.y() = coord.y();
-      if (coord.z() < stMin.z()) stMin.z() = coord.z();
-      if (coord.x() > stMax.x()) stMax.x() = coord.x();
-      if (coord.y() > stMax.y()) stMax.y() = coord.y();
-      if (coord.z() > stMax.z()) stMax.z() = coord.z();
-    }
-
-    octomap_msgs::Octomap st_msg;
-    st_msg.header.frame_id = ws_frame;
-    st_msg.header.stamp = ros::Time(0);
-    bool msg_generated = octomap_msgs::fullMapToMsg(*samplingTree, st_msg);
-    if (msg_generated)
-    {
-      samplingTreePub.publish(st_msg);
-    }
-  }
-
-  if (workspaceTree)
-  {
-    motion_manager->setWorkspace(wsMin.x(), wsMin.y(), wsMin.z(), wsMax.x(), wsMax.y(), wsMax.z());
-
-    visualization_msgs::Marker ws_cube;
-    ws_cube.header.frame_id = ws_frame;
-    ws_cube.header.stamp = ros::Time(0);
-    ws_cube.ns = "ws_cube";
-    ws_cube.id = 0;
-    ws_cube.type = visualization_msgs::Marker::LINE_LIST;
-    ws_cube.color.a = 1.0;
-    ws_cube.color.r = 1.0;
-    ws_cube.color.g = 0.0;
-    ws_cube.color.b = 0.0;
-    ws_cube.scale.x = 0.002;
-    addCubeEdges(stMin, stMax, ws_cube.points);
-
-    cubeVisPub.publish(ws_cube);
-  }
 
   if (update_planning_tree)
     roiSub = nh.subscribe("/detect_roi/results", 1, &ViewpointPlanner::registerPointcloudWithRoi, this);
@@ -1025,8 +906,7 @@ double ViewpointPlanner::computeExpectedRayIGinSamplingTree(const octomap::KeyRa
   for (const octomap::OcTreeKey &key : ray)
   {
     octomap_vpp::RoiOcTreeNode *node = planningTree->search(key);
-    float reachability = samplingTree ? samplingTree->getReachability(transformToWorkspace(planningTree->keyToCoord(key))) : 1.f;
-    if (reachability > 0) reachability = 1.f; // Test: binarize reachability
+    float reachability = isInSamplingRegion(transformToWorkspace(planningTree->keyToCoord(key))) ? 1.f : 0.f;
     if (node == NULL)
     {
       expected_gain += reachability;
@@ -1362,7 +1242,7 @@ std::vector<Viewpoint> ViewpointPlanner::sampleAroundMultiROICenters(const std::
       vp.pose.position = octomap::pointOctomapToMsg(spherePoint);
       vp.pose.orientation = tf2::toMsg(viewQuat);
 
-      if (workspaceTree != NULL && workspaceTree->search(transformToWorkspace(spherePoint)) == NULL) // workspace specified and sampled point not in workspace
+      if (!isInWorkspace(transformToWorkspace(spherePoint))) // sampled point not in workspace
       {
         continue;
       }
@@ -1435,16 +1315,16 @@ std::vector<Viewpoint> ViewpointPlanner::sampleContourPoints(const octomap::poin
   std::vector<octomap::OcTreeKey> contourKeys;
   std::vector<Viewpoint> sampled_vps;
   //size_t total_nodes = 0, jumped_nodes = 0, rejected_nodes = 0, free_nodes = 0;
-  octomap::point3d stMin_tf = transformToMapFrame(stMin), stMax_tf = transformToMapFrame(stMax);
+  octomap::point3d srMin_tf = transformToMapFrame(srMin), srMax_tf = transformToMapFrame(srMax);
   for (size_t i = 0; i < 3; i++)
   {
-    if (stMin_tf(i) > stMax_tf(i))
-      std::swap(stMin_tf(i), stMax_tf(i));
+    if (srMin_tf(i) > srMax_tf(i))
+      std::swap(srMin_tf(i), srMax_tf(i));
   }
-  for (auto it = planningTree->begin_leafs_bbx(stMin_tf, stMax_tf), end = planningTree->end_leafs_bbx(); it != end; it++)
+  for (auto it = planningTree->begin_leafs_bbx(srMin_tf, srMax_tf), end = planningTree->end_leafs_bbx(); it != end; it++)
   {
     //total_nodes++;
-    if (samplingTree != NULL && samplingTree->search(transformToWorkspace(it.getCoordinate())) == NULL) // sampling tree specified and sampled point not in sampling tree
+    if (!isInSamplingRegion(transformToWorkspace(it.getCoordinate()))) // sampled point not in sampling region
     {
       //jumped_nodes++;
       continue;
@@ -1484,7 +1364,7 @@ std::vector<Viewpoint> ViewpointPlanner::sampleContourPoints(const octomap::poin
     tf2::Quaternion viewQuat = dirVecToQuat(-normalDir, camQuat, viewDir);
     vp.pose.position = octomap::pointOctomapToMsg(vpOrig);
     vp.pose.orientation = tf2::toMsg(viewQuat);
-    if (workspaceTree != NULL && workspaceTree->search(transformToWorkspace(vpOrig)) == NULL) // workspace specified and sampled point not in workspace
+    if (!isInWorkspace(transformToWorkspace(vpOrig))) // sampled point not in workspace
     {
       continue;
     }
@@ -1585,7 +1465,7 @@ std::vector<Viewpoint> ViewpointPlanner::sampleRoiContourPoints(const octomap::p
     vp.pose.position = octomap::pointOctomapToMsg(spherePoint);
     vp.pose.orientation = tf2::toMsg(viewQuat);
 
-    if (workspaceTree != NULL && workspaceTree->search(transformToWorkspace(spherePoint)) == NULL) // workspace specified and sampled point not in workspace
+    if (!isInWorkspace(transformToWorkspace(spherePoint))) // sampled point not in workspace
     {
       continue;
     }
@@ -1655,7 +1535,7 @@ std::vector<Viewpoint> ViewpointPlanner::sampleRoiAdjecentCountours(const octoma
 
   for (const octomap::OcTreeKey &key : inflated_roi_keys)
   {
-    if (samplingTree != NULL && samplingTree->search(transformToWorkspace(planningTree->keyToCoord(key))) == NULL) // sampling tree specified and sampled point not in sampling tree
+    if (!isInSamplingRegion(transformToWorkspace(planningTree->keyToCoord(key)))) // sampled point not in sampling region
     {
       continue;
     }
@@ -1689,7 +1569,7 @@ std::vector<Viewpoint> ViewpointPlanner::sampleRoiAdjecentCountours(const octoma
     vp.pose.position = octomap::pointOctomapToMsg(spherePoint);
     vp.pose.orientation = tf2::toMsg(viewQuat);
 
-    if (workspaceTree != NULL && workspaceTree->search(transformToWorkspace(spherePoint)) == NULL) // workspace specified and sampled point not in workspace
+    if (!isInWorkspace(transformToWorkspace(spherePoint))) // sampled point not in workspace
     {
       continue;
     }
@@ -1749,7 +1629,7 @@ std::vector<Viewpoint> ViewpointPlanner::sampleExplorationPoints(const octomap::
   std::vector<Viewpoint> sampledPoints;
 
   octomap::point3d wsMin_tf = transformToMapFrame(wsMin), wsMax_tf = transformToMapFrame(wsMax);
-  octomap::point3d stMin_tf = transformToMapFrame(stMin), stMax_tf = transformToMapFrame(stMax);
+  octomap::point3d stMin_tf = transformToMapFrame(srMin), stMax_tf = transformToMapFrame(srMax);
 
   for (size_t i = 0; i < 3; i++)
   {
@@ -1783,7 +1663,7 @@ std::vector<Viewpoint> ViewpointPlanner::sampleExplorationPoints(const octomap::
     vp.pose.position = octomap::pointOctomapToMsg(source);
     vp.pose.orientation = tf2::toMsg(viewQuat);
 
-    if (workspaceTree != NULL && workspaceTree->search(transformToWorkspace(source)) == NULL) // workspace specified and sampled point not in workspace
+    if (!isInWorkspace(transformToWorkspace(source))) // sampled point not in workspace
     {
       continue;
     }
@@ -1817,7 +1697,7 @@ std::vector<Viewpoint> ViewpointPlanner::sampleBorderPoints(const octomap::point
 
   for (auto it = planningTree->begin_leafs_bbx(pmin, pmax), end = planningTree->end_leafs_bbx(); it != end; it++)
   {
-    if (workspaceTree != NULL && workspaceTree->search(transformToWorkspace(it.getCoordinate())) == NULL) // workspace specified and sampled point not in workspace
+    if (!isInWorkspace(transformToWorkspace(it.getCoordinate()))) // sampled point not in workspace
     {
       continue;
     }

@@ -51,7 +51,7 @@ std::vector<Viewpoint> RoiContourSampler::sampleViewpoints()
       vp.pose.orientation = tf2::toMsg(viewQuat);
       vp.target = target;
 
-      if (planner->workspaceTree != nullptr && planner->workspaceTree->search(planner->transformToWorkspace(origin)) == nullptr) // workspace specified and sampled point not in workspace
+      if (!planner->isInWorkspace(planner->transformToWorkspace(origin))) // sampled point not in workspace
       {
         continue;
       }
@@ -88,9 +88,9 @@ std::vector<Viewpoint> RoiAdjacentSampler::sampleViewpoints()
 
     for (const octomap::OcTreeKey &key : inflated_roi_keys)
     {
-      if (planner->samplingTree != nullptr && planner->samplingTree->search(planner->transformToWorkspace(planner->planningTree->keyToCoord(key))) == nullptr)
+      if (!planner->isInSamplingRegion(planner->transformToWorkspace(planner->planningTree->keyToCoord(key))))
       {
-        continue; // sampling tree specified and sampled point not in sampling tree
+        continue; // sampled point not in sampling region
       }
       octomap_vpp::RoiOcTreeNode *node = planner->planningTree->search(key);
       if (node != nullptr && node->getLogOdds() < 0) // is node free; TODO: replace with bounds later
@@ -121,9 +121,9 @@ std::vector<Viewpoint> RoiAdjacentSampler::sampleViewpoints()
       vp.pose.orientation = tf2::toMsg(viewQuat);
       vp.target = target;
 
-      if (planner->workspaceTree != nullptr && planner->workspaceTree->search(planner->transformToWorkspace(origin)) == nullptr)
+      if (!planner->isInWorkspace(planner->transformToWorkspace(origin)))
       {
-        continue; // workspace specified and sampled point not in workspace
+        continue; // sampled point not in workspace
       }
       if (planner->compute_ik_when_sampling)
       {
@@ -153,7 +153,7 @@ std::vector<Viewpoint> ExplorationSampler::sampleViewpoints()
     std::vector<Viewpoint> sampledPoints;
 
     octomap::point3d wsMin_tf = planner->transformToMapFrame(planner->wsMin), wsMax_tf = planner->transformToMapFrame(planner->wsMax);
-    octomap::point3d stMin_tf = planner->transformToMapFrame(planner->stMin), stMax_tf = planner->transformToMapFrame(planner->stMax);
+    octomap::point3d stMin_tf = planner->transformToMapFrame(planner->srMin), stMax_tf = planner->transformToMapFrame(planner->srMax);
 
     for (unsigned int i = 0; i < 3; i++)
     {
@@ -183,9 +183,9 @@ std::vector<Viewpoint> ExplorationSampler::sampleViewpoints()
       vp.pose.position = octomap::pointOctomapToMsg(origin);
       vp.pose.orientation = tf2::toMsg(viewQuat);
 
-      if (planner->workspaceTree != nullptr && planner->workspaceTree->search(planner->transformToWorkspace(origin)) == nullptr)
+      if (!planner->isInWorkspace(planner->transformToWorkspace(origin)))
       {
-        continue; // workspace specified and sampled point not in workspace
+        continue; // sampled point not in workspace
       }
       if (planner->compute_ik_when_sampling)
       {
@@ -212,7 +212,7 @@ std::vector<Viewpoint> ContourSampler::sampleViewpoints()
     std::vector<Viewpoint> sampledPoints;
 
     std::vector<octomap::OcTreeKey> contourKeys;
-    octomap::point3d stMin_tf = planner->transformToMapFrame(planner->stMin), stMax_tf = planner->transformToMapFrame(planner->stMax);
+    octomap::point3d stMin_tf = planner->transformToMapFrame(planner->srMin), stMax_tf = planner->transformToMapFrame(planner->srMax);
     for (unsigned int i = 0; i < 3; i++)
     {
       if (stMin_tf(i) > stMax_tf(i))
@@ -220,9 +220,9 @@ std::vector<Viewpoint> ContourSampler::sampleViewpoints()
     }
     for (auto it = planner->planningTree->begin_leafs_bbx(stMin_tf, stMax_tf), end = planner->planningTree->end_leafs_bbx(); it != end; it++)
     {
-      if (planner->samplingTree != nullptr && planner->samplingTree->search(planner->transformToWorkspace(it.getCoordinate())) == nullptr)
+      if (!planner->isInSamplingRegion(planner->transformToWorkspace(it.getCoordinate())))
       {
-        continue; // sampling tree specified and sampled point not in sampling tree
+        continue; // sampled point not in sampling region
       }
       if (it->getLogOdds() < 0) // is node free; TODO: replace with bounds later
       {
@@ -254,9 +254,9 @@ std::vector<Viewpoint> ContourSampler::sampleViewpoints()
       vp.pose.orientation = tf2::toMsg(viewQuat);
       vp.target = contourPoint;
 
-      if (planner->workspaceTree != nullptr && planner->workspaceTree->search(planner->transformToWorkspace(origin)) == nullptr)
+      if (!planner->isInWorkspace(planner->transformToWorkspace(origin)))
       {
-        continue; // workspace specified and sampled point not in workspace
+        continue; // sampled point not in workspace
       }
       if (planner->compute_ik_when_sampling)
       {
@@ -292,9 +292,9 @@ std::vector<Viewpoint> BorderSampler::sampleViewpoints()
 
     for (auto it = planner->planningTree->begin_leafs_bbx(box_min, box_max), end = planner->planningTree->end_leafs_bbx(); it != end; it++)
     {
-      if (planner->workspaceTree != nullptr && planner->workspaceTree->search(planner->transformToWorkspace(it.getCoordinate())) == nullptr)
+      if (!planner->isInWorkspace(planner->transformToWorkspace(it.getCoordinate())))
       {
-        continue; // workspace specified and sampled point not in workspace
+        continue; // sampled point not in workspace
       }
       if (it->getLogOdds() < 0) // is node free; TODO: replace with bounds later
       {

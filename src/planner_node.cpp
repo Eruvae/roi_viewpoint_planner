@@ -202,6 +202,64 @@ void reconfigureCallback(roi_viewpoint_planner::PlannerConfig &config, uint32_t 
     planner->minimum_cluster_size = config.minimum_cluster_size;
     planner->cluster_neighborhood = static_cast<octomap_vpp::Neighborhood>(config.cluster_neighborhood);
   }
+
+  bool publish_workspace = false;
+  bool publish_sampling_region = false;
+
+  // Adjust workspace/sampling region if necessary
+  if (level & (1 << 23) || level & (1 << 24)) // workspace
+  {
+    if (level & (1 << 23)) // minimum
+    {
+      if (config.ws_max_x < config.ws_min_x)
+        config.ws_max_x = config.ws_min_x;
+      if (config.ws_max_y < config.ws_min_y)
+        config.ws_max_y = config.ws_min_y;
+      if (config.ws_max_z < config.ws_min_z)
+        config.ws_max_z = config.ws_min_z;
+    }
+    else // if (level & (1 << 24)) // maximum
+    {
+      if (config.ws_min_x > config.ws_max_x)
+        config.ws_min_x = config.ws_max_x;
+      if (config.ws_min_y > config.ws_max_y)
+        config.ws_min_y = config.ws_max_y;
+      if (config.ws_min_z > config.ws_max_z)
+        config.ws_min_z = config.ws_max_z;
+    }
+    planner->wsMin = octomap::point3d(config.ws_min_x, config.ws_min_y, config.ws_min_z);
+    planner->wsMax = octomap::point3d(config.ws_max_x, config.ws_max_y, config.ws_max_z);
+    publish_workspace = true;
+  }
+
+  if (level & (1 << 25) || level & (1 << 26)) // sampling region
+  {
+    if (level & (1 << 25)) // minimum
+    {
+      if (config.sr_max_x < config.sr_min_x)
+        config.sr_max_x = config.sr_min_x;
+      if (config.sr_max_y < config.sr_min_y)
+        config.sr_max_y = config.sr_min_y;
+      if (config.sr_max_z < config.sr_min_z)
+        config.sr_max_z = config.sr_min_z;
+    }
+    else // if (level & (1 << 26)) // maximum
+    {
+      if (config.sr_min_x > config.sr_max_x)
+        config.sr_min_x = config.sr_max_x;
+      if (config.sr_min_y > config.sr_max_y)
+        config.sr_min_y = config.sr_max_y;
+      if (config.sr_min_z > config.sr_max_z)
+        config.sr_min_z = config.sr_max_z;
+    }
+    planner->srMin = octomap::point3d(config.sr_min_x, config.sr_min_y, config.sr_min_z);
+    planner->srMax = octomap::point3d(config.sr_max_x, config.sr_max_y, config.sr_max_z);
+    publish_sampling_region = true;
+  }
+
+  //if (publish_workspace) publishWorkspaceMarker();
+  //if (publish_sampling_region) publishSamplingRegionMarker();
+
   current_config = config;
 }
 

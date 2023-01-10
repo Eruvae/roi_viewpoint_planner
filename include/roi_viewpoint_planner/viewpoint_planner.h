@@ -45,8 +45,6 @@
 #include <std_srvs/Empty.h>
 
 #include <octomap_vpp/RoiOcTree.h>
-#include <octomap_vpp/CountingOcTree.h>
-#include <octomap_vpp/WorkspaceOcTree.h>
 #include <octomap_vpp/roioctree_utils.h>
 
 #include <roi_viewpoint_planner_msgs/PlannerState.h>
@@ -109,15 +107,11 @@ private:
   ros::NodeHandle &nh;
   ros::NodeHandle &nhp;
   std::shared_ptr<octomap_vpp::RoiOcTree> planningTree;
-  octomap_vpp::WorkspaceOcTree *workspaceTree;
-  octomap_vpp::WorkspaceOcTree *samplingTree;
   std::unique_ptr<rvp_evaluation::Evaluator> evaluator;
   std::unique_ptr<rvp_evaluation::ExternalClusterEvaluator> external_cluster_evaluator;
 
   std::unique_ptr<MotionManagerBase> motion_manager;
 
-  octomap::point3d wsMin, wsMax;
-  octomap::point3d stMin, stMax;
   tf2_ros::Buffer tfBuffer;
   tf2_ros::TransformListener tfListener;
   ros::Publisher octomapPub;
@@ -126,8 +120,6 @@ private:
   ros::Publisher pointVisPub;
   ros::Publisher viewArrowVisPub;
   ros::Publisher poseArrayPub;
-  ros::Publisher workspaceTreePub;
-  ros::Publisher samplingTreePub;
   ros::Publisher cubeVisPub;
   //ros::Publisher planningScenePub;
 
@@ -273,6 +265,9 @@ public:
   size_t roiMaxSamples, explMaxSamples;
   UtilityType roiUtil, explUtil;
 
+  octomap::point3d wsMin, wsMax;
+  octomap::point3d srMin, srMax;
+
   // Planner parameters end
 
   ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, const std::string &wstree_file, const std::string &sampling_tree_file, double tree_resolution,
@@ -356,6 +351,20 @@ public:
 
   octomap::point3d transformToWorkspace(const octomap::point3d &p);
   geometry_msgs::Pose transformToWorkspace(const geometry_msgs::Pose &p);
+
+  bool isInWorkspace(const octomap::point3d &p)
+  {
+    return (p.x() >= wsMin.x() && p.x() <= wsMax.x() &&
+            p.y() >= wsMin.y() && p.y() <= wsMax.y() &&
+            p.z() >= wsMin.z() && p.z() <= wsMax.z());
+  }
+
+  bool isInSamplingRegion(const octomap::point3d &p)
+  {
+    return (p.x() >= srMin.x() && p.x() <= srMax.x() &&
+            p.y() >= srMin.y() && p.y() <= srMax.y() &&
+            p.z() >= srMin.z() && p.z() <= srMax.z());
+  }
 
   octomap::point3d computeSurfaceNormalDir(const octomap::OcTreeKey &key);
 
