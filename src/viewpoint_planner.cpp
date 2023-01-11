@@ -1886,9 +1886,50 @@ bool ViewpointPlanner::randomizePlantPositions(const geometry_msgs::Point &min, 
 
 void ViewpointPlanner::plannerLoop()
 {
+  bool plan_with_trolley_started = false;
+  int trolley_current_segment = 0;
+  ros::Time last_trolley_move_time = ros::Time::now();
+
   for (ros::Rate rate(100); ros::ok() && !shutdown_planner; rate.sleep())
   {
-    plannerLoopOnce();
+    if (plan_with_trolley)
+    {
+      if (!plan_with_trolley_started)
+      {
+        trolley_current_segment = 0;
+        last_trolley_move_time = ros::Time::now();
+        plan_with_trolley_started = true;
+      }
+
+      if (trolley_time_per_segment > (ros::Time::now() - last_trolley_move_time).toSec())
+      {
+        trolley_current_segment++;
+        if (trolley_current_segment >= trolley_num_segments) // last segment
+        {
+          plan_with_trolley_started = false;
+          trolley_current_segment = 0;
+          plan_with_trolley = false; // TODO: Update config
+          mode = ViewpointPlanner::PlannerMode::IDLE; // TODO: Update config
+          continue;
+        }
+        trolley_remote.moveTo(static_cast<float>(trolley_remote.getPosition() + trolley_move_length));
+        for (ros::Rate waitTrolley(10); ros::ok() && !trolley_remote.isReady(); waitTrolley.sleep());
+        ros::Duration(5).sleep(); // wait for transform to update
+
+        last_trolley_move_time = ros::Time::now();
+      }
+
+      plannerLoopOnce();
+    }
+    else
+    {
+      if (plan_with_trolley_started) // plan_with_trolley was deactivated
+      {
+        trolley_current_segment = 0;
+        mode = ViewpointPlanner::PlannerMode::IDLE; // TODO: Update config
+      }
+      plannerLoopOnce();
+    }
   }
 }
 

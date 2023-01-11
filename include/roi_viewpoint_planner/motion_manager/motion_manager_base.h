@@ -33,7 +33,11 @@ public:
 
   virtual bool moveToPose(const geometry_msgs::Pose &goal_pose, bool async=false, bool safe=true) = 0;
 
-  virtual bool moveToState(const std::vector<double> &joint_values, bool async=false, bool safe=true) {return false;};
+  virtual bool moveToState(const std::vector<double> &joint_values, bool async=false, bool safe=true) {return false;}
+
+  virtual bool moveToNamedPose(const std::string &pose_name, bool async=false, bool safe=false) {return false;}
+
+  virtual bool moveToHomePose(bool async=false, bool safe=false) {return false;};
 };
 
 } // namespace view_motion_planner

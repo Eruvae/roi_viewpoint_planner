@@ -21,6 +21,8 @@ using moveit::core::MoveItErrorCode;
 class RobotManager : public MotionManagerBase
 {
 private:
+  ros::NodeHandle nh;
+  const std::string robot_description_param_name;
   const std::string group_name;
   MoveGroupInterface manipulator_group;
   //robot_model_loader::RobotModelLoaderPtr rml;
@@ -36,8 +38,7 @@ private:
   bool executePlan(const moveit::planning_interface::MoveGroupInterface::Plan &plan, bool async);
 
 public:
-  RobotManager(ViewpointPlanner *parent, const std::string &pose_reference_frame = "world", const std::string &end_effector_link = "camera_link",
-               const std::string& group_name = "manipulator", const std::string &robot_description_param_name = "robot_description");
+  RobotManager(ViewpointPlanner *parent, const std::string &pose_reference_frame = "world", const std::string &end_effector_link = "camera_link");
 
   // Set configurable planner parameters
   void setWorkspace(double minx, double miny, double minz, double maxx, double maxy, double maxz);
@@ -52,6 +53,10 @@ public:
   bool moveToPose(const geometry_msgs::Pose &goal_pose, bool async=false, bool safe=true);
 
   bool moveToState(const std::vector<double> &joint_values, bool async=false, bool safe=true);
+
+  bool moveToNamedPose(const std::string &pose_name, bool async=false, bool safe=false);
+
+  bool moveToHomePose(bool async=false, bool safe=false);
 };
 
 } // namespace view_motion_planner

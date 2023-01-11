@@ -165,6 +165,7 @@ set(VIEWPOINT_PLANNER_SRC_FILES
   src/octree_provider_interfaces/direct_planner_interface.cpp
   src/motion_manager/robot_manager.cpp
   src/motion_manager/direct_point_motion.cpp
+  src/trolley_remote.cpp
 )
 
 ## Declare a C++ library

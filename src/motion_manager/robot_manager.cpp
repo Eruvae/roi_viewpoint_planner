@@ -9,11 +9,12 @@
 namespace roi_viewpoint_planner
 {
 
-RobotManager::RobotManager(ViewpointPlanner *parent, const std::string &pose_reference_frame, const std::string &end_effector_link,
-                           const std::string& group_name,  const std::string &robot_description_param_name)
+RobotManager::RobotManager(ViewpointPlanner *parent, const std::string &pose_reference_frame, const std::string &end_effector_link)
   : MotionManagerBase(parent, pose_reference_frame, end_effector_link),
-    group_name(group_name),
-    manipulator_group(MoveGroupInterface::Options(group_name, robot_description_param_name))
+    nh(""),
+    robot_description_param_name(nh.param<std::string>("/roi_viewpoint_planner/robot_description_param_name", "robot_description")),
+    group_name(nh.param<std::string>("/roi_viewpoint_planner/group_name", "manipulator")),
+    manipulator_group(MoveGroupInterface(MoveGroupInterface::Options(group_name, robot_description_param_name)))
     //rml(new robot_model_loader::RobotModelLoader(robot_description_param_name)),
     //psm(new planning_scene_monitor::PlanningSceneMonitor(rml)),
     //kinematic_model(rml->getModel()),
@@ -97,6 +98,18 @@ bool RobotManager::moveToState(const std::vector<double> &joint_values, bool asy
     return false;
   }
 
+  return planAndExecuteFromMoveGroup(async, safe);
+}
+
+bool RobotManager::moveToNamedPose(const std::string &pose_name, bool async, bool safe)
+{
+  manipulator_group.setNamedTarget(pose_name);
+  return planAndExecuteFromMoveGroup(async, safe);
+}
+
+bool RobotManager::moveToHomePose(bool async, bool safe)
+{
+  manipulator_group.setNamedTarget("home");
   return planAndExecuteFromMoveGroup(async, safe);
 }
 

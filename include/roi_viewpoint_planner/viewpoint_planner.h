@@ -61,6 +61,8 @@
 
 #include "roi_viewpoint_planner/time_logger.h"
 
+#include "roi_viewpoint_planner/trolley_remote.h"
+
 //#define PUBLISH_PLANNING_TIMES
 
 #ifdef PUBLISH_PLANNING_TIMES
@@ -264,6 +266,14 @@ public:
 
   size_t roiMaxSamples, explMaxSamples;
   UtilityType roiUtil, explUtil;
+
+  bool plan_with_trolley;
+  double trolley_move_length;
+  double trolley_time_per_segment;
+  double trolley_num_segments;
+  double trolley_plan_named_poses;
+
+  trolley_remote::TrolleyRemote trolley_remote;
 
   octomap::point3d wsMin, wsMax;
   octomap::point3d srMin, srMax;

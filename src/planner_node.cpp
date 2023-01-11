@@ -229,7 +229,7 @@ void reconfigureCallback(roi_viewpoint_planner::PlannerConfig &config, uint32_t 
     }
     planner->wsMin = octomap::point3d(config.ws_min_x, config.ws_min_y, config.ws_min_z);
     planner->wsMax = octomap::point3d(config.ws_max_x, config.ws_max_y, config.ws_max_z);
-    publish_workspace = true;
+    //publishWorkspaceMarker();
   }
 
   if (level & (1 << 25) || level & (1 << 26)) // sampling region
@@ -254,11 +254,23 @@ void reconfigureCallback(roi_viewpoint_planner::PlannerConfig &config, uint32_t 
     }
     planner->srMin = octomap::point3d(config.sr_min_x, config.sr_min_y, config.sr_min_z);
     planner->srMax = octomap::point3d(config.sr_max_x, config.sr_max_y, config.sr_max_z);
-    publish_sampling_region = true;
+    //publishSamplingRegionMarker();
   }
 
-  //if (publish_workspace) publishWorkspaceMarker();
-  //if (publish_sampling_region) publishSamplingRegionMarker();
+  if (level & (1 << 27)) // plan_with_trolley
+  {
+    planner->plan_with_trolley = config.plan_with_trolley;
+    config.mode = Planner_SAMPLE_AUTOMATIC;
+    planner->mode = static_cast<ViewpointPlanner::PlannerMode>(config.mode);
+  }
+
+  if (level & (1 << 28)) // trolley paramters
+  {
+    planner->trolley_move_length = config.trolley_move_length;
+    planner->trolley_time_per_segment = config.trolley_time_per_segment;
+    planner->trolley_num_segments = config.trolley_num_segments;
+    planner->trolley_plan_named_poses = config.trolley_plan_named_poses;
+  }
 
   current_config = config;
 }
@@ -303,15 +315,7 @@ int main(int argc, char **argv)
   config_server = new dynamic_reconfigure::Server<roi_viewpoint_planner::PlannerConfig>(config_mutex, nhp);
   config_server->setCallback(reconfigureCallback);
 
-  std::vector<double> joint_start_values;
-  if(nhp.getParam("initial_joint_values", joint_start_values))
-  {
-    planner->getMotionManager()->moveToState(joint_start_values, false, false);
-  }
-  else
-  {
-    ROS_WARN("No inital joint values set");
-  }
+  planner->getMotionManager()->moveToHomePose(false, false);
 
   planner->plannerLoop();
 
