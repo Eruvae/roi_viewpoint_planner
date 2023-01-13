@@ -71,8 +71,8 @@
   <depend>rosbag_storage</depend>
   <depend>rvp_evaluation</depend>
   <!--depend>image_geometry</depend>
-  <depend>instance_segmentation_msgs</depend>
-  <depend>trolley_remote</depend-->
+  <depend>instance_segmentation_msgs</depend-->
+  <depend>trolley_simulation</depend>
 
   <build_depend>message_generation</build_depend>
   <exec_depend>message_runtime</exec_depend>

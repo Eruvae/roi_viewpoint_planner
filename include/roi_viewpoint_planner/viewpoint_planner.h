@@ -61,7 +61,7 @@
 
 #include "roi_viewpoint_planner/time_logger.h"
 
-#include "roi_viewpoint_planner/trolley_remote.h"
+#include "trolley_simulation/trolley_remote.h"
 
 //#define PUBLISH_PLANNING_TIMES
 

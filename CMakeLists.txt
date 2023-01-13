@@ -27,7 +27,7 @@ set (CATKIN_DEPENDENCIES
     rvp_evaluation
     #image_geometry
     #instance_segmentation_msgs
-    #trolley_remote
+    trolley_simulation
 )
 
 ## Find catkin macros and libraries
@@ -165,7 +165,6 @@ set(VIEWPOINT_PLANNER_SRC_FILES
   src/octree_provider_interfaces/direct_planner_interface.cpp
   src/motion_manager/robot_manager.cpp
   src/motion_manager/direct_point_motion.cpp
-  src/trolley_remote.cpp
 )
 
 ## Declare a C++ library
