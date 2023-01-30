@@ -132,7 +132,7 @@ bool RobotManager::planAndExecuteFromMoveGroup(bool async, bool safe)
 
 bool RobotManager::safeExecutePlan(const moveit::planning_interface::MoveGroupInterface::Plan &plan, bool async)
 {
-  if (parent->require_execution_confirmation)
+  if (parent->config.require_execution_confirmation)
   {
     std_srvs::Trigger requestExecution;
     if (!parent->requestExecutionConfirmation.call(requestExecution) || !requestExecution.response.success)
@@ -144,7 +144,7 @@ bool RobotManager::safeExecutePlan(const moveit::planning_interface::MoveGroupIn
 
   parent->robotIsMoving.store(true);
   parent->scanInserted.store(false);
-  if (parent->publish_planning_state)
+  if (parent->config.publish_planning_state)
   {
     parent->state.robot_is_moving = true;
     parent->state.scan_inserted = false;
@@ -154,7 +154,7 @@ bool RobotManager::safeExecutePlan(const moveit::planning_interface::MoveGroupIn
   bool res = executePlan(plan, async);
 
   parent->robotIsMoving.store(false);
-  if (parent->publish_planning_state)
+  if (parent->config.publish_planning_state)
   {
     parent->state.robot_is_moving = false;
     parent->plannerStatePub.publish(parent->state);

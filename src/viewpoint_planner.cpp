@@ -16,21 +16,16 @@ namespace roi_viewpoint_planner
 ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, const std::string &wstree_file, const std::string &sampling_tree_file, double tree_resolution,
                                    const std::string &map_frame, const std::string &ws_frame, bool update_planning_tree, bool initialize_evaluator) :
   nh(nh), nhp(nhp),
+  config_server(config_mutex, nhp),
   planningTree(new octomap_vpp::RoiOcTree(tree_resolution)),
   map_frame(map_frame),
   ws_frame(ws_frame),
   evaluator(nullptr),
-  wsMin(-FLT_MAX, -FLT_MAX, -FLT_MAX),
-  wsMax(FLT_MAX, FLT_MAX, FLT_MAX),
-  srMin(-FLT_MAX, -FLT_MAX, -FLT_MAX),
-  srMax(FLT_MAX, FLT_MAX, FLT_MAX),
   tfBuffer(ros::Duration(30)),
   tfListener(tfBuffer),
   depthCloudSub(nh, PC_TOPIC, 1),
   tfCloudFilter(depthCloudSub, tfBuffer, map_frame, 100, nh),
-  mode(IDLE),
   loop_state(NORMAL),
-  execute_plan(false),
   robotIsMoving(false),
   scanInserted(false),
   m2s_current_steps(0),
@@ -51,6 +46,8 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, co
   {
     motion_manager.reset(new RobotManager(this, map_frame));
   }
+
+  config_server.setCallback(boost::bind(&ViewpointPlanner::reconfigureCallback, this, boost::placeholders::_1, boost::placeholders::_2));
 
   std::stringstream fDateTime;
   const boost::posix_time::ptime curDateTime = boost::posix_time::second_clock::local_time();
@@ -82,8 +79,6 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, co
 
   resetMoveitOctomapClient = nh.serviceClient<std_srvs::Empty>("/clear_octomap");
   resetVoxbloxMapClient = nh.serviceClient<std_srvs::Empty>("/voxblox_node/clear_map");
-
-  // Load workspace
 
   if (update_planning_tree)
     roiSub = nh.subscribe("/detect_roi/results", 1, &ViewpointPlanner::registerPointcloudWithRoi, this);
@@ -125,8 +120,10 @@ bool ViewpointPlanner::startEvaluator(size_t numEvals, EvalEpisodeEndParam episo
   eval_epEndParam = episodeEndParam;
   eval_episode_duration = episodeDuration;  
   eval_running = true;
-  execute_plan = true;
-  require_execution_confirmation = false;
+  config.activate_execution = true;
+  config.require_execution_confirmation = false;
+
+  updateConfig();
 
   eval_randomize = randomize_plants;
   eval_randomize_min = min;
@@ -167,7 +164,8 @@ void ViewpointPlanner::setEvaluatorStartParams()
   eval_plannerStartTime = ros::Time::now();
   eval_accumulatedPlanDuration = 0;
   eval_accumulatedPlanLength = 0;
-  mode = SAMPLE_AUTOMATIC;
+  config.mode = Planner_SAMPLE_AUTOMATIC;
+  updateConfig();
 }
 
 template<typename T>
@@ -260,7 +258,8 @@ bool ViewpointPlanner::resetEvaluator()
   timeLogger.initNewFile();
   eval_trial_num++;
 
-  mode = IDLE;
+  config.mode = Planner_IDLE;
+  updateConfig();
   resetOctomap();
 
   bool success = false;
@@ -309,6 +308,14 @@ bool ViewpointPlanner::resetEvaluator()
   planningScenePub.publish(scene);
 }*/
 
+bool ViewpointPlanner::setMode(int mode)
+{
+  if (mode < Planner_IDLE || mode > Planner_SAMPLE_BORDER) return false;
+  config.mode = mode;
+  updateConfig();
+  return true;
+}
+
 void ViewpointPlanner::publishMap()
 {
   octomap_msgs::Octomap map_msg;
@@ -317,10 +324,12 @@ void ViewpointPlanner::publishMap()
   map_msg.header.stamp = ros::Time::now();
 
   tree_mtx.lock();
+
   bool msg_generated = octomap_msgs::fullMapToMsg(*planningTree, map_msg);
-  if (publish_cluster_visualization)
+  if (config.publish_cluster_visualization)
   {
-    std::tie(centers, volumes) = planningTree->getClusterCentersWithVolume(minimum_cluster_size, cluster_neighborhood);
+    octomap_vpp::Neighborhood cluster_neighborhood = static_cast<octomap_vpp::Neighborhood>(config.cluster_neighborhood);
+    std::tie(centers, volumes) = planningTree->getClusterCentersWithVolume(config.minimum_cluster_size, cluster_neighborhood);
   }
   tree_mtx.unlock();
 
@@ -330,7 +339,7 @@ void ViewpointPlanner::publishMap()
     //publishOctomapToPlanningScene(map_msg);
   }
 
-  if (publish_cluster_visualization)
+  if (config.publish_cluster_visualization)
   {
     publishCubeVisualization(cubeVisPub, centers, volumes);
   }
@@ -361,7 +370,7 @@ void ViewpointPlanner::publishMap()
 
 void ViewpointPlanner::registerPointcloudWithRoi(const ros::MessageEvent<pointcloud_roi_msgs::PointcloudWithRoi const> &event)
 {
-  if (mode == IDLE || (!insert_scan_while_moving && robotIsMoving.load()))
+  if (config.mode == Planner_IDLE || (!config.insert_scan_while_moving && robotIsMoving.load()))
   {
     //ROS_INFO_STREAM("Robot is currently moving, not inserting ROI");
     return;
@@ -394,7 +403,7 @@ void ViewpointPlanner::registerPointcloudWithRoi(const ros::MessageEvent<pointcl
     }
   }
 
-  if (!insert_scan_if_not_moved) // check if robot has moved since last update
+  if (!config.insert_scan_if_not_moved) // check if robot has moved since last update
   {
     Eigen::Affine3d camPoseEigen = tf2::transformToEigen(pcFrameTf.transform);
     static Eigen::Affine3d lastCamPose;
@@ -425,13 +434,13 @@ void ViewpointPlanner::registerPointcloudWithRoi(const ros::MessageEvent<pointcl
   tree_mtx.unlock();
 
   scanInserted.store(true);
-  if (publish_planning_state)
+  if (config.publish_planning_state)
   {
     state.scan_inserted = true;
     plannerStatePub.publish(state);
   }
 
-  if (record_map_updates)
+  if (config.record_map_updates)
   {
     plannerBag.write("/detect_roi/results", event);
   }
@@ -1246,7 +1255,7 @@ std::vector<Viewpoint> ViewpointPlanner::sampleAroundMultiROICenters(const std::
       {
         continue;
       }
-      if (compute_ik_when_sampling)
+      if (config.compute_ik_when_sampling)
       {
         if (!motion_manager->getJointValuesFromPose(transformToWorkspace(vp.pose), vp.joint_target))
           continue;
@@ -1315,7 +1324,8 @@ std::vector<Viewpoint> ViewpointPlanner::sampleContourPoints(const octomap::poin
   std::vector<octomap::OcTreeKey> contourKeys;
   std::vector<Viewpoint> sampled_vps;
   //size_t total_nodes = 0, jumped_nodes = 0, rejected_nodes = 0, free_nodes = 0;
-  octomap::point3d srMin_tf = transformToMapFrame(srMin), srMax_tf = transformToMapFrame(srMax);
+  octomap::point3d srMin_tf = transformToMapFrame(octomap::point3d(config.sr_min_x, config.sr_min_y, config.sr_min_z));
+  octomap::point3d srMax_tf = transformToMapFrame(octomap::point3d(config.sr_max_x, config.sr_max_y, config.sr_max_z));
   for (size_t i = 0; i < 3; i++)
   {
     if (srMin_tf(i) > srMax_tf(i))
@@ -1368,7 +1378,7 @@ std::vector<Viewpoint> ViewpointPlanner::sampleContourPoints(const octomap::poin
     {
       continue;
     }
-    if (compute_ik_when_sampling)
+    if (config.compute_ik_when_sampling)
     {
       if (!motion_manager->getJointValuesFromPose(transformToWorkspace(vp.pose), vp.joint_target))
         continue;
@@ -1381,7 +1391,7 @@ std::vector<Viewpoint> ViewpointPlanner::sampleContourPoints(const octomap::poin
 
     vp.target = contourPoint;
     octomap::pose6d viewpose(vpOrig, octomath::Quaternion(viewQuat.w(), viewQuat.x(), viewQuat.y(), viewQuat.z()));
-    vp.infoGain = computeViewpointSamplingValue(viewpose, 80.0 * M_PI / 180.0, 8, 6, sensor_max_range); // planningTree->computeViewpointValue(viewpose, 80.0 * M_PI / 180.0, 8, 6, sensor_max_range, false);
+    vp.infoGain = computeViewpointSamplingValue(viewpose, 80.0 * M_PI / 180.0, 8, 6, config.sensor_max_range); // planningTree->computeViewpointValue(viewpose, 80.0 * M_PI / 180.0, 8, 6, sensor_max_range, false);
     vp.distance = (vpOrig - camPos).norm();
     vp.utility = vp.infoGain - 0.2 * vp.distance;
     vp.isFree = true;
@@ -1469,7 +1479,7 @@ std::vector<Viewpoint> ViewpointPlanner::sampleRoiContourPoints(const octomap::p
     {
       continue;
     }
-    if (compute_ik_when_sampling)
+    if (config.compute_ik_when_sampling)
     {
       if (!motion_manager->getJointValuesFromPose(transformToWorkspace(vp.pose), vp.joint_target))
         continue;
@@ -1573,7 +1583,7 @@ std::vector<Viewpoint> ViewpointPlanner::sampleRoiAdjecentCountours(const octoma
     {
       continue;
     }
-    if (compute_ik_when_sampling)
+    if (config.compute_ik_when_sampling)
     {
       if (!motion_manager->getJointValuesFromPose(transformToWorkspace(vp.pose), vp.joint_target))
         continue;
@@ -1628,25 +1638,27 @@ std::vector<Viewpoint> ViewpointPlanner::sampleExplorationPoints(const octomap::
   tf2::Vector3 viewDir = camMat.getColumn(0);
   std::vector<Viewpoint> sampledPoints;
 
-  octomap::point3d wsMin_tf = transformToMapFrame(wsMin), wsMax_tf = transformToMapFrame(wsMax);
-  octomap::point3d stMin_tf = transformToMapFrame(srMin), stMax_tf = transformToMapFrame(srMax);
+  octomap::point3d wsMin_tf = transformToMapFrame(octomap::point3d(config.ws_min_x, config.ws_min_y, config.ws_min_z));
+  octomap::point3d wsMax_tf = transformToMapFrame(octomap::point3d(config.ws_max_x, config.ws_max_y, config.ws_max_z));
+  octomap::point3d srMin_tf = transformToMapFrame(octomap::point3d(config.sr_min_x, config.sr_min_y, config.sr_min_z));
+  octomap::point3d srMax_tf = transformToMapFrame(octomap::point3d(config.sr_max_x, config.sr_max_y, config.sr_max_z));
 
   for (size_t i = 0; i < 3; i++)
   {
     if (wsMin_tf(i) > wsMax_tf(i))
       std::swap(wsMin_tf(i), wsMax_tf(i));
 
-    if (stMin_tf(i) > stMax_tf(i))
-      std::swap(stMin_tf(i), stMax_tf(i));
+    if (srMin_tf(i) > srMax_tf(i))
+      std::swap(srMin_tf(i), srMax_tf(i));
   }
 
   std::uniform_real_distribution<double> wsxDist(wsMin_tf.x(), wsMax_tf.x());
   std::uniform_real_distribution<double> wsyDist(wsMin_tf.y(), wsMax_tf.y());
   std::uniform_real_distribution<double> wszDist(wsMin_tf.z(), wsMax_tf.z());
 
-  std::uniform_real_distribution<double> stxDist(stMin_tf.x(), stMax_tf.x());
-  std::uniform_real_distribution<double> styDist(stMin_tf.y(), stMax_tf.y());
-  std::uniform_real_distribution<double> stzDist(stMin_tf.z(), stMax_tf.z());
+  std::uniform_real_distribution<double> stxDist(srMin_tf.x(), srMax_tf.x());
+  std::uniform_real_distribution<double> styDist(srMin_tf.y(), srMax_tf.y());
+  std::uniform_real_distribution<double> stzDist(srMin_tf.z(), srMax_tf.z());
 
   const size_t TOTAL_SAMPLE_TRIES = 30;
 
@@ -1667,7 +1679,7 @@ std::vector<Viewpoint> ViewpointPlanner::sampleExplorationPoints(const octomap::
     {
       continue;
     }
-    if (compute_ik_when_sampling)
+    if (config.compute_ik_when_sampling)
     {
       if (!motion_manager->getJointValuesFromPose(transformToWorkspace(vp.pose), vp.joint_target))
         continue;
@@ -1732,7 +1744,7 @@ std::vector<Viewpoint> ViewpointPlanner::sampleBorderPoints(const octomap::point
     vp.pose.position = octomap::pointOctomapToMsg(point);
     vp.pose.orientation = tf2::toMsg(viewQuat);
 
-    if (compute_ik_when_sampling)
+    if (config.compute_ik_when_sampling)
     {
       if (!motion_manager->getJointValuesFromPose(transformToWorkspace(vp.pose), vp.joint_target))
         continue;
@@ -1884,6 +1896,99 @@ bool ViewpointPlanner::randomizePlantPositions(const geometry_msgs::Point &min, 
   return true;
 }
 
+void ViewpointPlanner::updateConfig()
+{
+  boost::recursive_mutex::scoped_lock lock(config_mutex);
+  config_server.updateConfig(config);
+}
+
+void ViewpointPlanner::reconfigureCallback(roi_viewpoint_planner::PlannerConfig &new_config, uint32_t level)
+{
+  ROS_INFO_STREAM("Reconfigure callback called");
+
+  if (level & (1 << 3)) // minimum sensor range
+  {
+    if (new_config.sensor_max_range < new_config.sensor_min_range && !(level & (1 << 4)))
+      new_config.sensor_max_range = new_config.sensor_min_range;
+  }
+  if (level & (1 << 4)) // maximum sensor range
+  {
+    if (new_config.sensor_min_range > new_config.sensor_max_range)
+      new_config.sensor_min_range = new_config.sensor_max_range;
+  }
+
+  if (level & (1 << 12)) // planner
+  {
+    this->getMotionManager()->setPlannerId(new_config.planner);
+  }
+  if (level & (1 << 13)) // planning_time
+  {
+    this->getMotionManager()->setPlanningTime(new_config.planning_time);
+  }
+  if (level & (1 << 16)) // velocity_scaling
+  {
+    this->getMotionManager()->setMaxVelocityScalingFactor(new_config.velocity_scaling);
+  }
+
+  bool publish_workspace = false;
+  bool publish_sampling_region = false;
+
+  // Adjust workspace/sampling region if necessary
+  if (level & (1 << 23) || level & (1 << 24)) // workspace
+  {
+    if (level & (1 << 23)) // minimum
+    {
+      if (new_config.ws_max_x < new_config.ws_min_x)
+        new_config.ws_max_x = new_config.ws_min_x;
+      if (new_config.ws_max_y < new_config.ws_min_y)
+        new_config.ws_max_y = new_config.ws_min_y;
+      if (new_config.ws_max_z < new_config.ws_min_z)
+        new_config.ws_max_z = new_config.ws_min_z;
+    }
+    else // if (level & (1 << 24)) // maximum
+    {
+      if (new_config.ws_min_x > new_config.ws_max_x)
+        new_config.ws_min_x = new_config.ws_max_x;
+      if (new_config.ws_min_y > new_config.ws_max_y)
+        new_config.ws_min_y = new_config.ws_max_y;
+      if (new_config.ws_min_z > new_config.ws_max_z)
+        new_config.ws_min_z = new_config.ws_max_z;
+    }
+    //publishWorkspaceMarker();
+  }
+
+  if (level & (1 << 25) || level & (1 << 26)) // sampling region
+  {
+    if (level & (1 << 25)) // minimum
+    {
+      if (new_config.sr_max_x < new_config.sr_min_x)
+        new_config.sr_max_x = new_config.sr_min_x;
+      if (new_config.sr_max_y < new_config.sr_min_y)
+        new_config.sr_max_y = new_config.sr_min_y;
+      if (new_config.sr_max_z < new_config.sr_min_z)
+        new_config.sr_max_z = new_config.sr_min_z;
+    }
+    else // if (level & (1 << 26)) // maximum
+    {
+      if (new_config.sr_min_x > new_config.sr_max_x)
+        new_config.sr_min_x = new_config.sr_max_x;
+      if (new_config.sr_min_y > new_config.sr_max_y)
+        new_config.sr_min_y = new_config.sr_max_y;
+      if (new_config.sr_min_z > new_config.sr_max_z)
+        new_config.sr_min_z = new_config.sr_max_z;
+    }
+    //publishSamplingRegionMarker();
+  }
+
+  if (level & (1 << 27)) // plan_with_trolley
+  {
+    //this->plan_with_trolley = new_config.plan_with_trolley;
+    new_config.mode = Planner_SAMPLE_AUTOMATIC;
+  }
+
+  config = new_config;
+}
+
 void ViewpointPlanner::plannerLoop()
 {
   bool plan_with_trolley_started = false;
@@ -1892,7 +1997,7 @@ void ViewpointPlanner::plannerLoop()
 
   for (ros::Rate rate(100); ros::ok() && !shutdown_planner; rate.sleep())
   {
-    if (plan_with_trolley)
+    if (config.plan_with_trolley)
     {
       if (!plan_with_trolley_started)
       {
@@ -1901,18 +2006,19 @@ void ViewpointPlanner::plannerLoop()
         plan_with_trolley_started = true;
       }
 
-      if (trolley_time_per_segment > (ros::Time::now() - last_trolley_move_time).toSec())
+      if (config.trolley_time_per_segment > (ros::Time::now() - last_trolley_move_time).toSec())
       {
         trolley_current_segment++;
-        if (trolley_current_segment >= trolley_num_segments) // last segment
+        if (trolley_current_segment >= config.trolley_num_segments) // last segment
         {
           plan_with_trolley_started = false;
           trolley_current_segment = 0;
-          plan_with_trolley = false; // TODO: Update config
-          mode = ViewpointPlanner::PlannerMode::IDLE; // TODO: Update config
+          config.plan_with_trolley = false;
+          config.mode = Planner_IDLE;
+          updateConfig();
           continue;
         }
-        trolley_remote.moveTo(static_cast<float>(trolley_remote.getPosition() + trolley_move_length));
+        trolley_remote.moveTo(static_cast<float>(trolley_remote.getPosition() + config.trolley_move_length));
         for (ros::Rate waitTrolley(10); ros::ok() && !trolley_remote.isReady(); waitTrolley.sleep());
         ros::Duration(5).sleep(); // wait for transform to update
 
@@ -1926,7 +2032,8 @@ void ViewpointPlanner::plannerLoop()
       if (plan_with_trolley_started) // plan_with_trolley was deactivated
       {
         trolley_current_segment = 0;
-        mode = ViewpointPlanner::PlannerMode::IDLE; // TODO: Update config
+        config.mode = Planner_IDLE;
+        updateConfig();
       }
       plannerLoopOnce();
     }
@@ -1937,7 +2044,7 @@ bool ViewpointPlanner::plannerLoopOnce()
 {
   timeLogger.startLoop();
 
-  if (mode == IDLE || (wait_for_scan && !scanInserted.load()))
+  if (config.mode == Planner_IDLE || (config.wait_for_scan && !scanInserted.load()))
   {
     timeLogger.endLoop();
     return false;
@@ -1947,7 +2054,7 @@ bool ViewpointPlanner::plannerLoopOnce()
 
   timeLogger.saveTime(TimeLogger::MAP_PUBLISHED);
 
-  if (mode == MAP_ONLY)
+  if (config.mode == Planner_MAP_ONLY)
   {
     timeLogger.endLoop();
     return false;
@@ -1977,7 +2084,7 @@ bool ViewpointPlanner::plannerLoopOnce()
 
   timeLogger.saveTime(TimeLogger::CAM_POS_COMPUTED);
 
-  if (activate_move_to_see && loop_state == M2S)
+  if (config.activate_move_to_see && loop_state == M2S)
   {
     bool m2s_success = false;
     roi_viewpoint_planner_msgs::GetGradient gradSrv;
@@ -1987,7 +2094,7 @@ bool ViewpointPlanner::plannerLoopOnce()
       ROS_INFO_STREAM("Gradient: " << resp.gradient.position.x << ", " << resp.gradient.position.y << ", " << resp.gradient.position.z);
       ROS_INFO_STREAM("Delta: " << resp.delta);
 
-      if (resp.delta > m2s_delta_thresh)
+      if (resp.delta > config.m2s_delta_thresh)
       {
           geometry_msgs::Pose commandPose;
           tf2::Quaternion q_rot;
@@ -2002,7 +2109,7 @@ bool ViewpointPlanner::plannerLoopOnce()
 
           eval_lastStep = "M2S";
           timeLogger.saveTime(TimeLogger::MOVE_TO_SEE_APPLIED);
-          if (execute_plan && motion_manager->moveToPose(transformToWorkspace(commandPose)))
+          if (config.activate_execution && motion_manager->moveToPose(transformToWorkspace(commandPose)))
           {
             ROS_INFO_STREAM("Succesfully moving with move to see");
             m2s_success = true;
@@ -2018,9 +2125,9 @@ bool ViewpointPlanner::plannerLoopOnce()
     {
       ROS_INFO_STREAM("Move to see service not found");
     }
-    if (!m2s_success || m2s_current_steps >= m2s_max_steps)
+    if (!m2s_success || m2s_current_steps >= config.m2s_max_steps)
     {
-      if (!move_to_see_exclusive)
+      if (!config.move_to_see_exclusive)
         loop_state = NORMAL;
 
       m2s_current_steps = 0;
@@ -2036,60 +2143,63 @@ bool ViewpointPlanner::plannerLoopOnce()
     return a.utility < b.utility;
   };
 
+  UtilityType roi_util = static_cast<UtilityType>(config.roi_util);
+  UtilityType expl_util = static_cast<UtilityType>(config.expl_util);
+
   // ROI sampling
-  if (mode == SAMPLE_ROI_CONTOURS || (mode == SAMPLE_AUTOMATIC && roi_sample_mode == SAMPLE_ROI_CONTOURS))
+  if (config.mode == Planner_SAMPLE_ROI_CONTOURS || (config.mode == Planner_SAMPLE_AUTOMATIC && config.auto_roi_sampling == Planner_SAMPLE_ROI_CONTOURS))
   {
-    std::unique_ptr<SamplerBase> sampler = createSampler(SamplerType::ROI_CONTOUR_SAMPLER, this, camOrig, camQuat, roiMaxSamples, roiUtil);
+    std::unique_ptr<SamplerBase> sampler = createSampler(SamplerType::ROI_CONTOUR_SAMPLER, this, camOrig, camQuat, config.roi_max_samples, roi_util);
     roiSamplingVps = sampler->sampleViewpoints();
     std::make_heap(roiSamplingVps.begin(), roiSamplingVps.end(), vpComp);
     publishViewpointVisualizations(roiSamplingVps, "roiContourPoints", COLOR_ORANGE);
-    if (record_viewpoints)
+    if (config.record_viewpoints)
       saveViewpointsToBag(roiSamplingVps, "roiContourPoints", ros::Time::now());
   }
-  else if (mode == SAMPLE_ROI_ADJACENT || (mode == SAMPLE_AUTOMATIC && roi_sample_mode == SAMPLE_ROI_ADJACENT))
+  else if (config.mode == Planner_SAMPLE_ROI_ADJACENT || (config.mode == Planner_SAMPLE_AUTOMATIC && config.auto_roi_sampling == Planner_SAMPLE_ROI_ADJACENT))
   {
-    std::unique_ptr<SamplerBase> sampler = createSampler(SamplerType::ROI_ADJACENT_SAMPLER, this, camOrig, camQuat, roiMaxSamples, roiUtil);
+    std::unique_ptr<SamplerBase> sampler = createSampler(SamplerType::ROI_ADJACENT_SAMPLER, this, camOrig, camQuat, config.roi_max_samples, roi_util);
     roiSamplingVps = sampler->sampleViewpoints();
     std::make_heap(roiSamplingVps.begin(), roiSamplingVps.end(), vpComp);
     publishViewpointVisualizations(roiSamplingVps, "roiAdjPoints", COLOR_RED);
-    if (record_viewpoints)
+    if (config.record_viewpoints)
       saveViewpointsToBag(roiSamplingVps, "roiAdjPoints", ros::Time::now());
   }
-  else if (mode == SAMPLE_ROI_CENTERS || (mode == SAMPLE_AUTOMATIC && roi_sample_mode == SAMPLE_ROI_CENTERS))
+  else if (config.mode == Planner_SAMPLE_ROI_CENTERS || (config.mode == Planner_SAMPLE_AUTOMATIC && config.auto_roi_sampling == Planner_SAMPLE_ROI_CENTERS))
   {
-    std::unique_ptr<SamplerBase> sampler = createSampler(SamplerType::ROI_CENTER_SAMPLER, this, camOrig, camQuat, roiMaxSamples, roiUtil);
+    std::unique_ptr<SamplerBase> sampler = createSampler(SamplerType::ROI_CENTER_SAMPLER, this, camOrig, camQuat, config.roi_max_samples, roi_util);
     roiSamplingVps = sampler->sampleViewpoints();
     std::make_heap(roiSamplingVps.begin(), roiSamplingVps.end(), vpComp);
     publishViewpointVisualizations(roiSamplingVps, "roiPoints", COLOR_BROWN);
-    if (record_viewpoints)
+    if (config.record_viewpoints)
       saveViewpointsToBag(roiSamplingVps, "roiPoints", ros::Time::now());
   }
 
-  if (mode == SAMPLE_CONTOURS || (mode == SAMPLE_AUTOMATIC && expl_sample_mode == SAMPLE_CONTOURS))
+  if (config.mode == Planner_SAMPLE_CONTOURS || (config.mode == Planner_SAMPLE_AUTOMATIC && config.auto_expl_sampling == Planner_SAMPLE_CONTOURS))
   {
-    std::unique_ptr<SamplerBase> sampler = createSampler(SamplerType::CONTOUR_SAMPLER, this, camOrig, camQuat, explMaxSamples, explUtil);
+    std::unique_ptr<SamplerBase> sampler = createSampler(SamplerType::CONTOUR_SAMPLER, this, camOrig, camQuat, config.expl_max_samples, expl_util);
     explSamplingVps = sampler->sampleViewpoints();
     std::make_heap(explSamplingVps.begin(), explSamplingVps.end(), vpComp);
     publishViewpointVisualizations(explSamplingVps, "contourPoints", COLOR_GREEN);
-    if (record_viewpoints)
+    if (config.record_viewpoints)
       saveViewpointsToBag(explSamplingVps, "contourPoints", ros::Time::now());
   }
-  else if (mode == SAMPLE_BORDER || (mode == SAMPLE_AUTOMATIC && expl_sample_mode == SAMPLE_BORDER))
+  else if (config.mode == Planner_SAMPLE_BORDER || (config.mode == Planner_SAMPLE_AUTOMATIC && config.auto_expl_sampling == Planner_SAMPLE_BORDER))
   {
-    std::unique_ptr<SamplerBase> sampler = createSampler(SamplerType::BORDER_SAMPLER, this, camOrig, camQuat, explMaxSamples, explUtil);
+    std::unique_ptr<SamplerBase> sampler = createSampler(SamplerType::BORDER_SAMPLER, this, camOrig, camQuat, config.expl_max_samples, expl_util);
     explSamplingVps = sampler->sampleViewpoints();
     std::make_heap(explSamplingVps.begin(), explSamplingVps.end(), vpComp);
     publishViewpointVisualizations(explSamplingVps, "borderPoints", COLOR_BLUE);
-    if (record_viewpoints)
+    if (config.record_viewpoints)
       saveViewpointsToBag(explSamplingVps, "borderPoints", ros::Time::now());
   }
-  else if (mode == SAMPLE_EXPLORATION || (mode == SAMPLE_AUTOMATIC && expl_sample_mode == SAMPLE_EXPLORATION))
+  else if (config.mode == Planner_SAMPLE_EXPLORATION || (config.mode == Planner_SAMPLE_AUTOMATIC && config.auto_expl_sampling == Planner_SAMPLE_EXPLORATION))
   {
-    std::unique_ptr<SamplerBase> sampler = createSampler(SamplerType::EXPLORATION_SAMPLER, this, camOrig, camQuat, explMaxSamples, explUtil);
+    std::unique_ptr<SamplerBase> sampler = createSampler(SamplerType::EXPLORATION_SAMPLER, this, camOrig, camQuat, config.expl_max_samples, expl_util);
     explSamplingVps = sampler->sampleViewpoints();
     std::make_heap(explSamplingVps.begin(), explSamplingVps.end(), vpComp);
     publishViewpointVisualizations(explSamplingVps, "explorationPoints", COLOR_VIOLET);
-    if (record_viewpoints)
+    if (config.record_viewpoints)
       saveViewpointsToBag(explSamplingVps, "explorationPoints", ros::Time::now());
   }
 
@@ -2099,7 +2209,7 @@ bool ViewpointPlanner::plannerLoopOnce()
   //std::make_heap(borderVps.begin(), borderVps.end(), vpComp);
   //std::make_heap(contourVps.begin(), contourVps.end(), vpComp);
 
-  if (!execute_plan)
+  if (!config.activate_execution)
   {
     timeLogger.endLoop();
     return false;
@@ -2107,8 +2217,8 @@ bool ViewpointPlanner::plannerLoopOnce()
 
   std::vector<Viewpoint> &nextViewpoints = [&]() -> std::vector<Viewpoint>&
   {
-    if (mode == SAMPLE_ROI_CENTERS || mode == SAMPLE_ROI_CONTOURS || mode == SAMPLE_ROI_ADJACENT) return roiSamplingVps;
-    else if (mode == SAMPLE_CONTOURS || mode == SAMPLE_ROI_ADJACENT || mode == SAMPLE_EXPLORATION) return explSamplingVps;
+    if (config.mode == Planner_SAMPLE_ROI_CENTERS || config.mode == Planner_SAMPLE_ROI_CONTOURS || config.mode == Planner_SAMPLE_ROI_ADJACENT) return roiSamplingVps;
+    else if (config.mode == Planner_SAMPLE_CONTOURS || config.mode == Planner_SAMPLE_ROI_ADJACENT || config.mode == Planner_SAMPLE_EXPLORATION) return explSamplingVps;
 
     if (roiSamplingVps.size() > 0 && roiSamplingVps.front().utility > 0.2)
     {
@@ -2140,7 +2250,7 @@ bool ViewpointPlanner::plannerLoopOnce()
       ROS_INFO_STREAM("No viewpoint with sufficient utility found.");
       break;
     }*/
-    if (use_cartesian_motion)
+    if (config.use_cartesian_motion)
     {
       if (motion_manager->moveToPoseCartesian(transformToWorkspace(vp.pose)))
       {
@@ -2150,7 +2260,7 @@ bool ViewpointPlanner::plannerLoopOnce()
     }
     else
     {
-      if (compute_ik_when_sampling)
+      if (config.compute_ik_when_sampling)
       {
         if (motion_manager->moveToState(vp.joint_target))
         {
@@ -2168,7 +2278,7 @@ bool ViewpointPlanner::plannerLoopOnce()
       }
     }
   }
-  if (move_success && activate_move_to_see)
+  if (move_success && config.activate_move_to_see)
   {
       loop_state = M2S;
       m2s_current_steps = 0;

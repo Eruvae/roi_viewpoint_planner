@@ -114,6 +114,11 @@ private:
 
   std::unique_ptr<MotionManagerBase> motion_manager;
 
+  PlannerConfig config;
+  boost::recursive_mutex config_mutex;
+  dynamic_reconfigure::Server<PlannerConfig> config_server;
+  void reconfigureCallback(PlannerConfig &new_config, uint32_t level);
+
   tf2_ros::Buffer tfBuffer;
   tf2_ros::TransformListener tfListener;
   ros::Publisher octomapPub;
@@ -203,28 +208,14 @@ public:
 
   // Planner parameters
 
-  enum PlannerMode
+  static inline bool isRoiSampler(int m)
   {
-    IDLE = 0,
-    MAP_ONLY = 1,
-    SAMPLE_AUTOMATIC = 2,
-    SAMPLE_ROI_CONTOURS = 3,
-    SAMPLE_ROI_ADJACENT = 4,
-    SAMPLE_ROI_CENTERS = 5,
-    SAMPLE_EXPLORATION = 6,
-    SAMPLE_CONTOURS = 7,
-    SAMPLE_BORDER = 8,
-    NUM_MODES = 9 // Should be kept as last element if new modes are added
-  } mode, roi_sample_mode, expl_sample_mode;
-
-  static inline bool isRoiSampler(PlannerMode m)
-  {
-      return m >= SAMPLE_ROI_CONTOURS && m <= SAMPLE_ROI_CENTERS;
+      return m >= Planner_SAMPLE_ROI_CONTOURS && m <= Planner_SAMPLE_ROI_CENTERS;
   }
 
-  static inline bool isExplSampler(PlannerMode m)
+  static inline bool isExplSampler(int m)
   {
-      return m >= SAMPLE_EXPLORATION && m <= SAMPLE_BORDER;
+      return m >= Planner_SAMPLE_EXPLORATION && m <= Planner_SAMPLE_BORDER;
   }
 
   enum PlannerLoopState
@@ -233,50 +224,9 @@ public:
       M2S = 1
   } loop_state;
 
-  bool execute_plan;
-  bool require_execution_confirmation;
-
-  double sensor_min_range, sensor_max_range;
-  //double sensor_hfov;
-  //double sensor_vfov;
-
-  bool insert_scan_if_not_moved;
-  bool insert_scan_while_moving;
-  bool wait_for_scan;
-  bool publish_planning_state;
-
-  std::string planner_id;
-  double planning_time;
-
-  bool use_cartesian_motion;
-  bool compute_ik_when_sampling;
-
-  bool record_map_updates;
-  bool record_viewpoints;
-
-  bool activate_move_to_see;
-  bool move_to_see_exclusive;
-  double m2s_delta_thresh;
-  int m2s_max_steps;
   int m2s_current_steps;
 
-  bool publish_cluster_visualization;
-  size_t minimum_cluster_size;
-  octomap_vpp::Neighborhood cluster_neighborhood;
-
-  size_t roiMaxSamples, explMaxSamples;
-  UtilityType roiUtil, explUtil;
-
-  bool plan_with_trolley;
-  double trolley_move_length;
-  double trolley_time_per_segment;
-  double trolley_num_segments;
-  double trolley_plan_named_poses;
-
   trolley_remote::TrolleyRemote trolley_remote;
-
-  octomap::point3d wsMin, wsMax;
-  octomap::point3d srMin, srMax;
 
   // Planner parameters end
 
@@ -307,6 +257,8 @@ public:
     return tree_mtx;
   }
 
+  bool setMode(int mode);
+
   //void publishOctomapToPlanningScene(const octomap_msgs::Octomap &map_msg);
   void publishMap();
 
@@ -318,8 +270,8 @@ public:
 
   inline double sampleRandomSensorDistance()
   {
-    if (sensor_min_range == sensor_max_range) return sensor_max_range;
-    std::uniform_real_distribution<double> dist_distribution(sensor_min_range, sensor_max_range);
+    if (config.sensor_min_range == config.sensor_max_range) return config.sensor_max_range;
+    std::uniform_real_distribution<double> dist_distribution(config.sensor_min_range, config.sensor_max_range);
     return dist_distribution(random_engine);
   }
 
@@ -364,16 +316,16 @@ public:
 
   bool isInWorkspace(const octomap::point3d &p)
   {
-    return (p.x() >= wsMin.x() && p.x() <= wsMax.x() &&
-            p.y() >= wsMin.y() && p.y() <= wsMax.y() &&
-            p.z() >= wsMin.z() && p.z() <= wsMax.z());
+    return (p.x() >= config.ws_min_x && p.x() <= config.ws_max_x &&
+            p.y() >= config.ws_min_y && p.y() <= config.ws_max_y &&
+            p.z() >= config.ws_min_z && p.z() <= config.ws_max_z);
   }
 
   bool isInSamplingRegion(const octomap::point3d &p)
   {
-    return (p.x() >= srMin.x() && p.x() <= srMax.x() &&
-            p.y() >= srMin.y() && p.y() <= srMax.y() &&
-            p.z() >= srMin.z() && p.z() <= srMax.z());
+    return (p.x() >= config.sr_min_x && p.x() <= config.sr_max_x &&
+            p.y() >= config.sr_min_y && p.y() <= config.sr_max_y &&
+            p.z() >= config.sr_min_z && p.z() <= config.sr_max_z);
   }
 
   octomap::point3d computeSurfaceNormalDir(const octomap::OcTreeKey &key);
@@ -407,6 +359,8 @@ public:
   void resetOctomap();
 
   bool randomizePlantPositions(const geometry_msgs::Point &min, const geometry_msgs::Point &max, double min_dist);
+
+  void updateConfig();
 
   void plannerLoop();
 

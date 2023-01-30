@@ -56,7 +56,7 @@ std::vector<Viewpoint> RoiContourSampler::sampleViewpoints()
         continue;
       }
 
-      if (planner->compute_ik_when_sampling)
+      if (planner->config.compute_ik_when_sampling)
       {
         if (!planner->motion_manager->getJointValuesFromPose(planner->transformToWorkspace(vp.pose), vp.joint_target))
           continue;
@@ -125,7 +125,7 @@ std::vector<Viewpoint> RoiAdjacentSampler::sampleViewpoints()
       {
         continue; // sampled point not in workspace
       }
-      if (planner->compute_ik_when_sampling)
+      if (planner->config.compute_ik_when_sampling)
       {
         if (!planner->motion_manager->getJointValuesFromPose(planner->transformToWorkspace(vp.pose), vp.joint_target))
           continue;
@@ -152,25 +152,27 @@ std::vector<Viewpoint> ExplorationSampler::sampleViewpoints()
 
     std::vector<Viewpoint> sampledPoints;
 
-    octomap::point3d wsMin_tf = planner->transformToMapFrame(planner->wsMin), wsMax_tf = planner->transformToMapFrame(planner->wsMax);
-    octomap::point3d stMin_tf = planner->transformToMapFrame(planner->srMin), stMax_tf = planner->transformToMapFrame(planner->srMax);
+    octomap::point3d wsMin_tf = planner->transformToMapFrame(octomap::point3d(planner->config.ws_min_x, planner->config.ws_min_y, planner->config.ws_min_z));
+    octomap::point3d wsMax_tf = planner->transformToMapFrame(octomap::point3d(planner->config.ws_max_x, planner->config.ws_max_y, planner->config.ws_max_z));
+    octomap::point3d srMin_tf = planner->transformToMapFrame(octomap::point3d(planner->config.sr_min_x, planner->config.sr_min_y, planner->config.sr_min_z));
+    octomap::point3d srMax_tf = planner->transformToMapFrame(octomap::point3d(planner->config.sr_max_x, planner->config.sr_max_y, planner->config.sr_max_z));
 
     for (unsigned int i = 0; i < 3; i++)
     {
       if (wsMin_tf(i) > wsMax_tf(i))
         std::swap(wsMin_tf(i), wsMax_tf(i));
 
-      if (stMin_tf(i) > stMax_tf(i))
-        std::swap(stMin_tf(i), stMax_tf(i));
+      if (srMin_tf(i) > srMax_tf(i))
+        std::swap(srMin_tf(i), srMax_tf(i));
     }
 
     std::uniform_real_distribution<float> wsxDist(wsMin_tf.x(), wsMax_tf.x());
     std::uniform_real_distribution<float> wsyDist(wsMin_tf.y(), wsMax_tf.y());
     std::uniform_real_distribution<float> wszDist(wsMin_tf.z(), wsMax_tf.z());
 
-    std::uniform_real_distribution<float> stxDist(stMin_tf.x(), stMax_tf.x());
-    std::uniform_real_distribution<float> styDist(stMin_tf.y(), stMax_tf.y());
-    std::uniform_real_distribution<float> stzDist(stMin_tf.z(), stMax_tf.z());
+    std::uniform_real_distribution<float> stxDist(srMin_tf.x(), srMax_tf.x());
+    std::uniform_real_distribution<float> styDist(srMin_tf.y(), srMax_tf.y());
+    std::uniform_real_distribution<float> stzDist(srMin_tf.z(), srMax_tf.z());
 
     for (size_t i = 0; i < maxSamples; i++)
     {
@@ -187,7 +189,7 @@ std::vector<Viewpoint> ExplorationSampler::sampleViewpoints()
       {
         continue; // sampled point not in workspace
       }
-      if (planner->compute_ik_when_sampling)
+      if (planner->config.compute_ik_when_sampling)
       {
         if (!planner->motion_manager->getJointValuesFromPose(planner->transformToWorkspace(vp.pose), vp.joint_target))
           continue;
@@ -212,13 +214,16 @@ std::vector<Viewpoint> ContourSampler::sampleViewpoints()
     std::vector<Viewpoint> sampledPoints;
 
     std::vector<octomap::OcTreeKey> contourKeys;
-    octomap::point3d stMin_tf = planner->transformToMapFrame(planner->srMin), stMax_tf = planner->transformToMapFrame(planner->srMax);
+
+    octomap::point3d srMin_tf = planner->transformToMapFrame(octomap::point3d(planner->config.sr_min_x, planner->config.sr_min_y, planner->config.sr_min_z));
+    octomap::point3d srMax_tf = planner->transformToMapFrame(octomap::point3d(planner->config.sr_max_x, planner->config.sr_max_y, planner->config.sr_max_z));
+
     for (unsigned int i = 0; i < 3; i++)
     {
-      if (stMin_tf(i) > stMax_tf(i))
-        std::swap(stMin_tf(i), stMax_tf(i));
+      if (srMin_tf(i) > srMax_tf(i))
+        std::swap(srMin_tf(i), srMax_tf(i));
     }
-    for (auto it = planner->planningTree->begin_leafs_bbx(stMin_tf, stMax_tf), end = planner->planningTree->end_leafs_bbx(); it != end; it++)
+    for (auto it = planner->planningTree->begin_leafs_bbx(srMin_tf, srMax_tf), end = planner->planningTree->end_leafs_bbx(); it != end; it++)
     {
       if (!planner->isInSamplingRegion(planner->transformToWorkspace(it.getCoordinate())))
       {
@@ -258,7 +263,7 @@ std::vector<Viewpoint> ContourSampler::sampleViewpoints()
       {
         continue; // sampled point not in workspace
       }
-      if (planner->compute_ik_when_sampling)
+      if (planner->config.compute_ik_when_sampling)
       {
         if (!planner->motion_manager->getJointValuesFromPose(planner->transformToWorkspace(vp.pose), vp.joint_target))
           continue;
@@ -326,7 +331,7 @@ std::vector<Viewpoint> BorderSampler::sampleViewpoints()
       vp.pose.orientation = tf2::toMsg(viewQuat);
       vp.target = origin + dirVec;
 
-      if (planner->compute_ik_when_sampling)
+      if (planner->config.compute_ik_when_sampling)
       {
         if (!planner->motion_manager->getJointValuesFromPose(planner->transformToWorkspace(vp.pose), vp.joint_target))
           continue;
