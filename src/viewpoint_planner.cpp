@@ -13,13 +13,15 @@
 namespace roi_viewpoint_planner
 {
 
-ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, const std::string &wstree_file, const std::string &sampling_tree_file, double tree_resolution,
-                                   const std::string &map_frame, const std::string &ws_frame, bool update_planning_tree, bool initialize_evaluator) :
+ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, double tree_resolution,
+                                   const std::string &map_frame, const std::string &ws_frame, const std::string &pose_frame,
+                                   bool update_planning_tree, bool initialize_evaluator) :
   nh(nh), nhp(nhp),
   config_server(config_mutex, nhp),
   planningTree(new octomap_vpp::RoiOcTree(tree_resolution)),
   map_frame(map_frame),
   ws_frame(ws_frame),
+  pose_frame(pose_frame),
   evaluator(nullptr),
   tfBuffer(ros::Duration(30)),
   tfListener(tfBuffer),
@@ -40,14 +42,12 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, co
   std::string motion_manager_name = nhp.param<std::string>("motion_manager", "RobotManager");
   if (motion_manager_name == "DirectPointMotion")
   {
-    motion_manager.reset(new DirectPointMotion(this, map_frame));
+    motion_manager.reset(new DirectPointMotion(this, pose_frame));
   }
   else // default to robot manager
   {
-    motion_manager.reset(new RobotManager(this, map_frame));
+    motion_manager.reset(new RobotManager(this, pose_frame));
   }
-
-  config_server.setCallback(boost::bind(&ViewpointPlanner::reconfigureCallback, this, boost::placeholders::_1, boost::placeholders::_2));
 
   std::stringstream fDateTime;
   const boost::posix_time::ptime curDateTime = boost::posix_time::second_clock::local_time();
@@ -67,6 +67,8 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, co
   viewArrowVisPub = nh.advertise<visualization_msgs::MarkerArray>("roi_vp_marker", 1);
   poseArrayPub = nh.advertise<geometry_msgs::PoseArray>("vp_array", 1);
   cubeVisPub = nh.advertise<visualization_msgs::Marker>("cube_vis", 1, true);
+  workspacePub = nh.advertise<visualization_msgs::Marker>("workspace", 1, true);
+  samplingRegionPub = nh.advertise<visualization_msgs::Marker>("samplingRegion", 1, true);
 
   plannerStatePub = nhp.advertise<roi_viewpoint_planner_msgs::PlannerState>("planner_state", 1, true);
 
@@ -79,6 +81,8 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, co
 
   resetMoveitOctomapClient = nh.serviceClient<std_srvs::Empty>("/clear_octomap");
   resetVoxbloxMapClient = nh.serviceClient<std_srvs::Empty>("/voxblox_node/clear_map");
+
+  config_server.setCallback(boost::bind(&ViewpointPlanner::reconfigureCallback, this, boost::placeholders::_1, boost::placeholders::_2));
 
   if (update_planning_tree)
     roiSub = nh.subscribe("/detect_roi/results", 1, &ViewpointPlanner::registerPointcloudWithRoi, this);
@@ -164,6 +168,7 @@ void ViewpointPlanner::setEvaluatorStartParams()
   eval_plannerStartTime = ros::Time::now();
   eval_accumulatedPlanDuration = 0;
   eval_accumulatedPlanLength = 0;
+  eval_current_segment = 0;
   config.mode = Planner_SAMPLE_AUTOMATIC;
   updateConfig();
 }
@@ -366,6 +371,46 @@ void ViewpointPlanner::publishMap()
       inflatedOctomapPub.publish(inflated_map);
     }
   }
+}
+
+void ViewpointPlanner::publishWorkspaceMarker()
+{
+  visualization_msgs::Marker cube_msg;
+  cube_msg.header.frame_id = ws_frame;
+  cube_msg.header.stamp = ros::Time::now();
+  cube_msg.ns = "workspace";
+  cube_msg.id = 0;
+  cube_msg.type = visualization_msgs::Marker::LINE_LIST;
+  cube_msg.color = COLOR_RED;
+  cube_msg.scale.x = 0.01;
+  cube_msg.pose.orientation.w = 1.0; // normalize quaternion
+
+  octomap::point3d min(config.ws_min_x, config.ws_min_y, config.ws_min_z);
+  octomap::point3d max(config.ws_max_x, config.ws_max_y, config.ws_max_z);
+  //ROS_INFO_STREAM("WS: " << min << max);
+  addCubeEdges(min, max, cube_msg.points);
+
+  workspacePub.publish(cube_msg);
+}
+
+void ViewpointPlanner::publishSamplingRegionMarker()
+{
+  visualization_msgs::Marker cube_msg;
+  cube_msg.header.frame_id = ws_frame;
+  cube_msg.header.stamp = ros::Time::now();
+  cube_msg.ns = "samplingRegion";
+  cube_msg.id = 0;
+  cube_msg.type = visualization_msgs::Marker::LINE_LIST;
+  cube_msg.color = COLOR_GREEN;
+  cube_msg.scale.x = 0.01;
+  cube_msg.pose.orientation.w = 1.0; // normalize quaternion
+
+  octomap::point3d min(config.sr_min_x, config.sr_min_y, config.sr_min_z);
+  octomap::point3d max(config.sr_max_x, config.sr_max_y, config.sr_max_z);
+  //ROS_INFO_STREAM("SR: " << min << max);
+  addCubeEdges(min, max, cube_msg.points);
+
+  samplingRegionPub.publish(cube_msg);
 }
 
 void ViewpointPlanner::registerPointcloudWithRoi(const ros::MessageEvent<pointcloud_roi_msgs::PointcloudWithRoi const> &event)
@@ -915,7 +960,7 @@ double ViewpointPlanner::computeExpectedRayIGinSamplingTree(const octomap::KeyRa
   for (const octomap::OcTreeKey &key : ray)
   {
     octomap_vpp::RoiOcTreeNode *node = planningTree->search(key);
-    float reachability = isInSamplingRegion(transformToWorkspace(planningTree->keyToCoord(key))) ? 1.f : 0.f;
+    float reachability = isInSamplingRegion(transform(planningTree->keyToCoord(key), map_frame, ws_frame)) ? 1.f : 0.f;
     if (node == NULL)
     {
       expected_gain += reachability;
@@ -932,7 +977,7 @@ double ViewpointPlanner::computeExpectedRayIGinSamplingTree(const octomap::KeyRa
     }
     /*float logOdds = testTree.keyToLogOdds(key);
     double gain = testTree.computeExpectedInformationGain(logOdds);
-    double reachability = samplingTree ? samplingTree->getReachability(transformToWorkspace(planningTree->keyToCoord(key))) : 1.0; // default to 1 if reachability not specified
+    double reachability = samplingTree ? samplingTree->getReachability(transform(planningTree->keyToCoord(key), map_frame, ws_frame)) : 1.0; // default to 1 if reachability not specified
     //const double RB_WEIGHT = 0.5;
     double weightedGain = reachability * gain;//RB_WEIGHT * reachability + (1 - RB_WEIGHT) * gain;
     expected_gain += weightedGain; // * curProb
@@ -1100,90 +1145,6 @@ void ViewpointPlanner::visualizeBorderPoints(const octomap::point3d &pmin, const
   pointVisPub.publish( marker );
 }
 
-octomap::point3d ViewpointPlanner::transformToMapFrame(const octomap::point3d &p)
-{
-  if (map_frame == ws_frame)
-    return p;
-
-  geometry_msgs::TransformStamped trans;
-  try
-  {
-    trans = tfBuffer.lookupTransform(map_frame, ws_frame, ros::Time(0));
-  }
-  catch (const tf2::TransformException &e)
-  {
-    ROS_ERROR_STREAM("Couldn't find transform to ws frame in transformToWorkspace: " << e.what());
-    return p;
-  }
-
-  octomap::point3d pt;
-  tf2::doTransform(p, pt, trans);
-  return pt;
-}
-
-geometry_msgs::Pose ViewpointPlanner::transformToMapFrame(const geometry_msgs::Pose &p)
-{
-  if (map_frame == ws_frame)
-    return p;
-
-  geometry_msgs::TransformStamped trans;
-  try
-  {
-    trans = tfBuffer.lookupTransform(map_frame, ws_frame, ros::Time(0));
-  }
-  catch (const tf2::TransformException &e)
-  {
-    ROS_ERROR_STREAM("Couldn't find transform to ws frame in transformToWorkspace: " << e.what());
-    return p;
-  }
-
-  geometry_msgs::Pose pt;
-  tf2::doTransform(p, pt, trans);
-  return pt;
-}
-
-octomap::point3d ViewpointPlanner::transformToWorkspace(const octomap::point3d &p)
-{
-  if (map_frame == ws_frame)
-    return p;
-
-  geometry_msgs::TransformStamped trans;
-  try
-  {
-    trans = tfBuffer.lookupTransform(ws_frame, map_frame, ros::Time(0));
-  }
-  catch (const tf2::TransformException &e)
-  {
-    ROS_ERROR_STREAM("Couldn't find transform to ws frame in transformToWorkspace: " << e.what());
-    return p;
-  }
-
-  octomap::point3d pt;
-  tf2::doTransform(p, pt, trans);
-  return pt;
-}
-
-geometry_msgs::Pose ViewpointPlanner::transformToWorkspace(const geometry_msgs::Pose &p)
-{
-  if (map_frame == ws_frame)
-    return p;
-
-  geometry_msgs::TransformStamped trans;
-  try
-  {
-    trans = tfBuffer.lookupTransform(ws_frame, map_frame, ros::Time(0));
-  }
-  catch (const tf2::TransformException &e)
-  {
-    ROS_ERROR_STREAM("Couldn't find transform to ws frame in transformToWorkspace: " << e.what());
-    return p;
-  }
-
-  geometry_msgs::Pose pt;
-  tf2::doTransform(p, pt, trans);
-  return pt;
-}
-
 octomap::point3d ViewpointPlanner::computeSurfaceNormalDir(const octomap::OcTreeKey &key)
 {
   octomap::point3d normalDir;
@@ -1251,13 +1212,13 @@ std::vector<Viewpoint> ViewpointPlanner::sampleAroundMultiROICenters(const std::
       vp.pose.position = octomap::pointOctomapToMsg(spherePoint);
       vp.pose.orientation = tf2::toMsg(viewQuat);
 
-      if (!isInWorkspace(transformToWorkspace(spherePoint))) // sampled point not in workspace
+      if (!isInWorkspace(transform(spherePoint, map_frame, ws_frame))) // sampled point not in workspace
       {
         continue;
       }
       if (config.compute_ik_when_sampling)
       {
-        if (!motion_manager->getJointValuesFromPose(transformToWorkspace(vp.pose), vp.joint_target))
+        if (!motion_manager->getJointValuesFromPose(transform(vp.pose, map_frame, pose_frame), vp.joint_target))
           continue;
       }
 
@@ -1324,8 +1285,8 @@ std::vector<Viewpoint> ViewpointPlanner::sampleContourPoints(const octomap::poin
   std::vector<octomap::OcTreeKey> contourKeys;
   std::vector<Viewpoint> sampled_vps;
   //size_t total_nodes = 0, jumped_nodes = 0, rejected_nodes = 0, free_nodes = 0;
-  octomap::point3d srMin_tf = transformToMapFrame(octomap::point3d(config.sr_min_x, config.sr_min_y, config.sr_min_z));
-  octomap::point3d srMax_tf = transformToMapFrame(octomap::point3d(config.sr_max_x, config.sr_max_y, config.sr_max_z));
+  octomap::point3d srMin_tf = transform(octomap::point3d(config.sr_min_x, config.sr_min_y, config.sr_min_z), ws_frame, map_frame);
+  octomap::point3d srMax_tf = transform(octomap::point3d(config.sr_max_x, config.sr_max_y, config.sr_max_z), ws_frame, map_frame);
   for (size_t i = 0; i < 3; i++)
   {
     if (srMin_tf(i) > srMax_tf(i))
@@ -1334,7 +1295,7 @@ std::vector<Viewpoint> ViewpointPlanner::sampleContourPoints(const octomap::poin
   for (auto it = planningTree->begin_leafs_bbx(srMin_tf, srMax_tf), end = planningTree->end_leafs_bbx(); it != end; it++)
   {
     //total_nodes++;
-    if (!isInSamplingRegion(transformToWorkspace(it.getCoordinate()))) // sampled point not in sampling region
+    if (!isInSamplingRegion(transform(it.getCoordinate(), map_frame, ws_frame))) // sampled point not in sampling region
     {
       //jumped_nodes++;
       continue;
@@ -1374,13 +1335,13 @@ std::vector<Viewpoint> ViewpointPlanner::sampleContourPoints(const octomap::poin
     tf2::Quaternion viewQuat = dirVecToQuat(-normalDir, camQuat, viewDir);
     vp.pose.position = octomap::pointOctomapToMsg(vpOrig);
     vp.pose.orientation = tf2::toMsg(viewQuat);
-    if (!isInWorkspace(transformToWorkspace(vpOrig))) // sampled point not in workspace
+    if (!isInWorkspace(transform(vpOrig, map_frame, ws_frame))) // sampled point not in workspace
     {
       continue;
     }
     if (config.compute_ik_when_sampling)
     {
-      if (!motion_manager->getJointValuesFromPose(transformToWorkspace(vp.pose), vp.joint_target))
+      if (!motion_manager->getJointValuesFromPose(transform(vp.pose, map_frame, pose_frame), vp.joint_target))
         continue;
     }
     octomap_vpp::RoiOcTreeNode *node = planningTree->search(vpOrig);
@@ -1475,13 +1436,13 @@ std::vector<Viewpoint> ViewpointPlanner::sampleRoiContourPoints(const octomap::p
     vp.pose.position = octomap::pointOctomapToMsg(spherePoint);
     vp.pose.orientation = tf2::toMsg(viewQuat);
 
-    if (!isInWorkspace(transformToWorkspace(spherePoint))) // sampled point not in workspace
+    if (!isInWorkspace(transform(spherePoint, map_frame, ws_frame))) // sampled point not in workspace
     {
       continue;
     }
     if (config.compute_ik_when_sampling)
     {
-      if (!motion_manager->getJointValuesFromPose(transformToWorkspace(vp.pose), vp.joint_target))
+      if (!motion_manager->getJointValuesFromPose(transform(vp.pose, map_frame, pose_frame), vp.joint_target))
         continue;
     }
 
@@ -1545,7 +1506,7 @@ std::vector<Viewpoint> ViewpointPlanner::sampleRoiAdjecentCountours(const octoma
 
   for (const octomap::OcTreeKey &key : inflated_roi_keys)
   {
-    if (!isInSamplingRegion(transformToWorkspace(planningTree->keyToCoord(key)))) // sampled point not in sampling region
+    if (!isInSamplingRegion(transform(planningTree->keyToCoord(key), map_frame, ws_frame))) // sampled point not in sampling region
     {
       continue;
     }
@@ -1579,13 +1540,13 @@ std::vector<Viewpoint> ViewpointPlanner::sampleRoiAdjecentCountours(const octoma
     vp.pose.position = octomap::pointOctomapToMsg(spherePoint);
     vp.pose.orientation = tf2::toMsg(viewQuat);
 
-    if (!isInWorkspace(transformToWorkspace(spherePoint))) // sampled point not in workspace
+    if (!isInWorkspace(transform(spherePoint, map_frame, ws_frame))) // sampled point not in workspace
     {
       continue;
     }
     if (config.compute_ik_when_sampling)
     {
-      if (!motion_manager->getJointValuesFromPose(transformToWorkspace(vp.pose), vp.joint_target))
+      if (!motion_manager->getJointValuesFromPose(transform(vp.pose, map_frame, pose_frame), vp.joint_target))
         continue;
     }
 
@@ -1638,10 +1599,10 @@ std::vector<Viewpoint> ViewpointPlanner::sampleExplorationPoints(const octomap::
   tf2::Vector3 viewDir = camMat.getColumn(0);
   std::vector<Viewpoint> sampledPoints;
 
-  octomap::point3d wsMin_tf = transformToMapFrame(octomap::point3d(config.ws_min_x, config.ws_min_y, config.ws_min_z));
-  octomap::point3d wsMax_tf = transformToMapFrame(octomap::point3d(config.ws_max_x, config.ws_max_y, config.ws_max_z));
-  octomap::point3d srMin_tf = transformToMapFrame(octomap::point3d(config.sr_min_x, config.sr_min_y, config.sr_min_z));
-  octomap::point3d srMax_tf = transformToMapFrame(octomap::point3d(config.sr_max_x, config.sr_max_y, config.sr_max_z));
+  octomap::point3d wsMin_tf = transform(octomap::point3d(config.ws_min_x, config.ws_min_y, config.ws_min_z), ws_frame, map_frame);
+  octomap::point3d wsMax_tf = transform(octomap::point3d(config.ws_max_x, config.ws_max_y, config.ws_max_z), ws_frame, map_frame);
+  octomap::point3d srMin_tf = transform(octomap::point3d(config.sr_min_x, config.sr_min_y, config.sr_min_z), ws_frame, map_frame);
+  octomap::point3d srMax_tf = transform(octomap::point3d(config.sr_max_x, config.sr_max_y, config.sr_max_z), ws_frame, map_frame);
 
   for (size_t i = 0; i < 3; i++)
   {
@@ -1675,13 +1636,13 @@ std::vector<Viewpoint> ViewpointPlanner::sampleExplorationPoints(const octomap::
     vp.pose.position = octomap::pointOctomapToMsg(source);
     vp.pose.orientation = tf2::toMsg(viewQuat);
 
-    if (!isInWorkspace(transformToWorkspace(source))) // sampled point not in workspace
+    if (!isInWorkspace(transform(source, map_frame, ws_frame))) // sampled point not in workspace
     {
       continue;
     }
     if (config.compute_ik_when_sampling)
     {
-      if (!motion_manager->getJointValuesFromPose(transformToWorkspace(vp.pose), vp.joint_target))
+      if (!motion_manager->getJointValuesFromPose(transform(vp.pose, map_frame, pose_frame), vp.joint_target))
         continue;
     }
 
@@ -1709,7 +1670,7 @@ std::vector<Viewpoint> ViewpointPlanner::sampleBorderPoints(const octomap::point
 
   for (auto it = planningTree->begin_leafs_bbx(pmin, pmax), end = planningTree->end_leafs_bbx(); it != end; it++)
   {
-    if (!isInWorkspace(transformToWorkspace(it.getCoordinate()))) // sampled point not in workspace
+    if (!isInWorkspace(transform(it.getCoordinate(), map_frame, ws_frame))) // sampled point not in workspace
     {
       continue;
     }
@@ -1746,7 +1707,7 @@ std::vector<Viewpoint> ViewpointPlanner::sampleBorderPoints(const octomap::point
 
     if (config.compute_ik_when_sampling)
     {
-      if (!motion_manager->getJointValuesFromPose(transformToWorkspace(vp.pose), vp.joint_target))
+      if (!motion_manager->getJointValuesFromPose(transform(vp.pose, map_frame, pose_frame), vp.joint_target))
         continue;
     }
 
@@ -1954,7 +1915,7 @@ void ViewpointPlanner::reconfigureCallback(roi_viewpoint_planner::PlannerConfig 
       if (new_config.ws_min_z > new_config.ws_max_z)
         new_config.ws_min_z = new_config.ws_max_z;
     }
-    //publishWorkspaceMarker();
+    publishWorkspaceMarker();
   }
 
   if (level & (1 << 25) || level & (1 << 26)) // sampling region
@@ -1977,23 +1938,83 @@ void ViewpointPlanner::reconfigureCallback(roi_viewpoint_planner::PlannerConfig 
       if (new_config.sr_min_z > new_config.sr_max_z)
         new_config.sr_min_z = new_config.sr_max_z;
     }
-    //publishSamplingRegionMarker();
-  }
-
-  if (level & (1 << 27)) // plan_with_trolley
-  {
-    //this->plan_with_trolley = new_config.plan_with_trolley;
-    new_config.mode = Planner_SAMPLE_AUTOMATIC;
+    publishSamplingRegionMarker();
   }
 
   config = new_config;
 }
 
+void ViewpointPlanner::flipWsAndSr()
+{
+  config.ws_min_y = -(config.ws_min_y - 0.3);
+  config.ws_max_y = -(config.ws_max_y - 0.3);
+  std::swap(config.ws_min_y, config.ws_max_y);
+  config.sr_min_y = -(config.sr_min_y - 0.3);
+  config.sr_max_y = -(config.sr_max_y - 0.3);
+  std::swap(config.sr_min_y, config.sr_max_y);
+
+  updateConfig();
+
+  motion_manager->flipHomePose();
+
+  publishWorkspaceMarker();
+  publishSamplingRegionMarker();
+}
+
+bool ViewpointPlanner::trolleyGoNextSegment()
+{
+  if (config.trolley_flip_workspace && !trolley_current_flipped)
+  {
+    flipWsAndSr();
+    motion_manager->moveToHomePose();
+    trolley_current_flipped = true;
+    eval_current_segment++;
+    return true;
+  }
+
+  if (config.trolley_num_vertical_segments > 1 && trolley_current_vertical_segment < config.trolley_num_vertical_segments - 1)
+  {
+    ROS_INFO_STREAM("Lifting trolley");
+    trolley_remote.liftTo(trolley_remote.getHeight() + config.trolley_lift_dist);
+    for (ros::Rate waitTrolley(10); ros::ok() && !trolley_remote.isReady(); waitTrolley.sleep());
+    //ros::Duration(5).sleep(); // wait for transform to update
+    trolley_current_vertical_segment++;
+    if (config.trolley_flip_workspace && trolley_current_flipped)
+    {
+      flipWsAndSr();
+      trolley_current_flipped = false;
+    }
+    motion_manager->moveToHomePose();
+    eval_current_segment++;
+    return true;
+  }
+
+  if (config.trolley_num_segments > 1 && trolley_current_segment < config.trolley_num_segments - 1)
+  {
+    ROS_INFO_STREAM("Moving trolley");
+    trolley_remote.moveTo(static_cast<float>(trolley_remote.getPosition() + config.trolley_move_length));
+    for (ros::Rate waitTrolley(10); ros::ok() && !trolley_remote.isReady(); waitTrolley.sleep());
+    trolley_remote.liftTo(469.0);
+    for (ros::Rate waitTrolley(10); ros::ok() && !trolley_remote.isReady(); waitTrolley.sleep());
+    ros::Duration(5).sleep(); // wait for transform to update
+    trolley_current_vertical_segment = 0;
+    trolley_current_segment++;
+    if (config.trolley_flip_workspace && trolley_current_flipped)
+    {
+      flipWsAndSr();
+      trolley_current_flipped = false;
+    }
+    motion_manager->moveToHomePose();
+    eval_current_segment++;
+    return true;
+  }
+
+  return false;
+}
+
 void ViewpointPlanner::plannerLoop()
 {
-  bool plan_with_trolley_started = false;
-  int trolley_current_segment = 0;
-  ros::Time last_trolley_move_time = ros::Time::now();
+  last_trolley_move_time = ros::Time::now();
 
   for (ros::Rate rate(100); ros::ok() && !shutdown_planner; rate.sleep())
   {
@@ -2003,13 +2024,14 @@ void ViewpointPlanner::plannerLoop()
       {
         trolley_current_segment = 0;
         last_trolley_move_time = ros::Time::now();
+        config.mode = Planner_SAMPLE_AUTOMATIC;
+        updateConfig();
         plan_with_trolley_started = true;
       }
 
-      if (config.trolley_time_per_segment > (ros::Time::now() - last_trolley_move_time).toSec())
+      if ((ros::Time::now() - last_trolley_move_time).toSec() > config.trolley_time_per_segment)
       {
-        trolley_current_segment++;
-        if (trolley_current_segment >= config.trolley_num_segments) // last segment
+        if (!trolleyGoNextSegment()) // end reached, go to idle
         {
           plan_with_trolley_started = false;
           trolley_current_segment = 0;
@@ -2018,10 +2040,6 @@ void ViewpointPlanner::plannerLoop()
           updateConfig();
           continue;
         }
-        trolley_remote.moveTo(static_cast<float>(trolley_remote.getPosition() + config.trolley_move_length));
-        for (ros::Rate waitTrolley(10); ros::ok() && !trolley_remote.isReady(); waitTrolley.sleep());
-        ros::Duration(5).sleep(); // wait for transform to update
-
         last_trolley_move_time = ros::Time::now();
       }
 
@@ -2033,6 +2051,7 @@ void ViewpointPlanner::plannerLoop()
       {
         trolley_current_segment = 0;
         config.mode = Planner_IDLE;
+        plan_with_trolley_started = false;
         updateConfig();
       }
       plannerLoopOnce();
@@ -2109,7 +2128,7 @@ bool ViewpointPlanner::plannerLoopOnce()
 
           eval_lastStep = "M2S";
           timeLogger.saveTime(TimeLogger::MOVE_TO_SEE_APPLIED);
-          if (config.activate_execution && motion_manager->moveToPose(transformToWorkspace(commandPose)))
+          if (config.activate_execution && motion_manager->moveToPose(transform(commandPose, map_frame, pose_frame)))
           {
             ROS_INFO_STREAM("Succesfully moving with move to see");
             m2s_success = true;
@@ -2252,7 +2271,7 @@ bool ViewpointPlanner::plannerLoopOnce()
     }*/
     if (config.use_cartesian_motion)
     {
-      if (motion_manager->moveToPoseCartesian(transformToWorkspace(vp.pose)))
+      if (motion_manager->moveToPoseCartesian(transform(vp.pose, map_frame, pose_frame)))
       {
         move_success = true;
         break;
@@ -2270,7 +2289,7 @@ bool ViewpointPlanner::plannerLoopOnce()
       }
       else
       {
-        if (motion_manager->moveToPose(transformToWorkspace(vp.pose)))
+        if (motion_manager->moveToPose(transform(vp.pose, map_frame, pose_frame)))
         {
           move_success = true;
           break;

@@ -14,12 +14,13 @@ class MotionManagerBase
 protected:
   ViewpointPlanner *parent;
 
+  std::string home_pose;
   const std::string pose_reference_frame;
   const std::string end_effector_link;
 
 public:
   MotionManagerBase(ViewpointPlanner *parent, const std::string &pose_reference_frame = "world", const std::string &end_effector_link = "camera_link")
-    : parent(parent), pose_reference_frame(pose_reference_frame), end_effector_link(end_effector_link) {}
+    : parent(parent), home_pose("home"), pose_reference_frame(pose_reference_frame), end_effector_link(end_effector_link) {}
 
   // Set configurable planner parameters
   virtual void setWorkspace(double minx, double miny, double minz, double maxx, double maxy, double maxz) {}
@@ -36,6 +37,24 @@ public:
   virtual bool moveToState(const std::vector<double> &joint_values, bool async=false, bool safe=true) {return false;}
 
   virtual bool moveToNamedPose(const std::string &pose_name, bool async=false, bool safe=false) {return false;}
+
+  void setHomePoseName(const std::string &name)
+  {
+    home_pose = name;
+  }
+
+  std::string getHomePoseName()
+  {
+    return home_pose;
+  }
+
+  void flipHomePose()
+  {
+    if (home_pose == "home")
+      home_pose = "home_flipped";
+    else
+      home_pose = "home";
+  }
 
   virtual bool moveToHomePose(bool async=false, bool safe=false) {return false;};
 };

@@ -129,6 +129,8 @@ private:
   ros::Publisher poseArrayPub;
   ros::Publisher cubeVisPub;
   //ros::Publisher planningScenePub;
+  ros::Publisher workspacePub;
+  ros::Publisher samplingRegionPub;
 
   ros::Publisher plannerStatePub;
 
@@ -166,6 +168,7 @@ private:
 
   std::string map_frame;
   std::string ws_frame;
+  std::string pose_frame;
 
   #ifdef PUBLISH_PLANNING_TIMES
   boost::mutex times_mtx;
@@ -201,6 +204,7 @@ private:
   octomap::point3d eval_randomize_min;
   octomap::point3d eval_randomize_max;
   double eval_randomize_dist;
+  size_t eval_current_segment;
 
   std::atomic_bool shutdown_planner;
 
@@ -227,11 +231,17 @@ public:
   int m2s_current_steps;
 
   trolley_remote::TrolleyRemote trolley_remote;
+  bool plan_with_trolley_started = false;
+  ros::Time last_trolley_move_time;
+  int trolley_current_segment = 0;
+  int trolley_current_vertical_segment = 0;
+  bool trolley_current_flipped = false;
 
   // Planner parameters end
 
-  ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, const std::string &wstree_file, const std::string &sampling_tree_file, double tree_resolution,
-                   const std::string &map_frame, const std::string &ws_frame, bool update_planning_tree=true, bool initialize_evaluator=true);
+  ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, double tree_resolution,
+                   const std::string &map_frame, const std::string &ws_frame, const std::string &pose_frame,
+                   bool update_planning_tree=true, bool initialize_evaluator=true);
 
   ~ViewpointPlanner();
 
@@ -261,6 +271,10 @@ public:
 
   //void publishOctomapToPlanningScene(const octomap_msgs::Octomap &map_msg);
   void publishMap();
+
+  void publishWorkspaceMarker();
+
+  void publishSamplingRegionMarker();
 
   void registerPointcloudWithRoi(const ros::MessageEvent<pointcloud_roi_msgs::PointcloudWithRoi const> &event);
 
@@ -308,11 +322,27 @@ public:
 
   void visualizeBorderPoints(const octomap::point3d &pmin, const octomap::point3d &pmax, unsigned int depth = 0);
 
-  octomap::point3d transformToMapFrame(const octomap::point3d &p);
-  geometry_msgs::Pose transformToMapFrame(const geometry_msgs::Pose &p);
+  template<typename PointT>
+  PointT transform(const PointT &p, const std::string &from, const std::string &to)
+  {
+    if (from == to)
+      return p;
 
-  octomap::point3d transformToWorkspace(const octomap::point3d &p);
-  geometry_msgs::Pose transformToWorkspace(const geometry_msgs::Pose &p);
+    geometry_msgs::TransformStamped trans;
+    try
+    {
+      trans = tfBuffer.lookupTransform(to, from, ros::Time(0));
+    }
+    catch (const tf2::TransformException &e)
+    {
+      ROS_ERROR_STREAM("Couldn't find transform from " << from << " to " << to << " frame: " << e.what());
+      return p;
+    }
+
+    PointT pt;
+    tf2::doTransform(p, pt, trans);
+    return pt;
+  }
 
   bool isInWorkspace(const octomap::point3d &p)
   {
@@ -361,6 +391,10 @@ public:
   bool randomizePlantPositions(const geometry_msgs::Point &min, const geometry_msgs::Point &max, double min_dist);
 
   void updateConfig();
+
+  void flipWsAndSr();
+
+  bool trolleyGoNextSegment();
 
   void plannerLoop();
 

@@ -18,7 +18,7 @@ double UtilityBase::computeExpectedRayIGinSamplingTree(const octomap::KeyRay &ra
   for (const octomap::OcTreeKey &key : ray)
   {
     octomap_vpp::RoiOcTreeNode *node = planner->planningTree->search(key);
-    double reachability = planner->isInSamplingRegion(planner->transformToWorkspace(planner->planningTree->keyToCoord(key))) ? 1.0 : 0.0;
+    double reachability = planner->isInSamplingRegion(planner->transform(planner->planningTree->keyToCoord(key), planner->map_frame, planner->ws_frame)) ? 1.0 : 0.0;
     if (node == nullptr)
     {
       expected_gain += reachability;

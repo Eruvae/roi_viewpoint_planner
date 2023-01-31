@@ -109,7 +109,7 @@ bool RobotManager::moveToNamedPose(const std::string &pose_name, bool async, boo
 
 bool RobotManager::moveToHomePose(bool async, bool safe)
 {
-  manipulator_group.setNamedTarget("home");
+  manipulator_group.setNamedTarget(home_pose);
   return planAndExecuteFromMoveGroup(async, safe);
 }
 

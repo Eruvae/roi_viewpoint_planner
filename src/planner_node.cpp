@@ -117,15 +117,13 @@ int main(int argc, char **argv)
   else
     nhp.setParam("tree_resolution", 0.01);
 
-  std::string wstree_default_package = ros::package::getPath("ur_with_cam_gazebo");
-  std::string wstree_file = nhp.param<std::string>("workspace_tree", wstree_default_package + "/workspace_trees/static/workspace_map.ot");
-  std::string sampling_tree_file = nhp.param<std::string>("sampling_tree", wstree_default_package + "/workspace_trees/static/inflated_ws_tree.ot");
   std::string map_frame = nhp.param<std::string>("map_frame", "world");
   std::string ws_frame = nhp.param<std::string>("ws_frame", "arm_base_link");
+  std::string pose_frame = nhp.param<std::string>("pose_frame", "world");
   bool update_planning_tree = nhp.param<bool>("update_planning_tree", true);
   bool initialize_evaluator = nhp.param<bool>("initialize_evaluator", true);
 
-  planner = new ViewpointPlanner(nh, nhp, wstree_file, sampling_tree_file, tree_resolution, map_frame, ws_frame, update_planning_tree, initialize_evaluator);
+  planner = new ViewpointPlanner(nh, nhp, tree_resolution, map_frame, ws_frame, pose_frame, update_planning_tree, initialize_evaluator);
   ros::ServiceServer saveTreeAsObjService = nhp.advertiseService("save_tree_as_obj", saveTreeAsObj);
   ros::ServiceServer saveOctomapService = nhp.advertiseService("save_octomap", saveOctomap);
   ros::ServiceServer loadOctomapService = nhp.advertiseService("load_octomap", loadOctomap);
