@@ -32,6 +32,8 @@ ViewpointPlanner::ViewpointPlanner(ros::NodeHandle &nh, ros::NodeHandle &nhp, do
   scanInserted(false),
   m2s_current_steps(0),
   eval_running(false),
+  eval_start(false),
+  eval_initialized(false),
   eval_randomize(true),
   eval_randomize_min(-1, -1, -0.1),
   eval_randomize_max(1, 1, 0.1),
@@ -109,13 +111,15 @@ bool ViewpointPlanner::initializeEvaluator(ros::NodeHandle &nh, ros::NodeHandle 
   external_cluster_evaluator.reset(new rvp_evaluation::ExternalClusterEvaluator(gtLoader));
   eval_trial_num = 0;
   eval_start_index = 0;
+  eval_initialized = true;
   return true;
 }
 
 bool ViewpointPlanner::startEvaluator(size_t numEvals, EvalEpisodeEndParam episodeEndParam, double episodeDuration, int start_index,
-                                      bool randomize_plants, const octomap::point3d &min, const octomap::point3d &max, double min_dist)
+                                      bool randomize_plants, const octomap::point3d &min, const octomap::point3d &max, double min_dist,
+                                      bool with_trolley)
 {
-  if (eval_running)
+  if (!eval_initialized || eval_running || eval_start)
     return false;
 
   eval_trial_num = 0;
@@ -124,24 +128,20 @@ bool ViewpointPlanner::startEvaluator(size_t numEvals, EvalEpisodeEndParam episo
   eval_epEndParam = episodeEndParam;
   eval_episode_duration = episodeDuration;  
   eval_running = true;
-  config.activate_execution = true;
-  config.require_execution_confirmation = false;
 
-  updateConfig();
 
   eval_randomize = randomize_plants;
   eval_randomize_min = min;
   eval_randomize_max = max;
   eval_randomize_dist = min_dist;
 
-  if (eval_randomize)
-  {
-    evaluator->randomizePlantPositions(eval_randomize_min, eval_randomize_max, eval_randomize_dist);
-  }
-  resetOctomap();
+  eval_with_trolley = with_trolley;
 
   setEvaluatorStartParams();
   timeLogger.initNewFile(true, start_index);
+
+  eval_start = true;
+
   return true;
 }
 
@@ -160,17 +160,15 @@ void ViewpointPlanner::setEvaluatorStartParams()
   eval_ecVolRatioFile = std::ofstream("results_ec_volrat_" + file_index_str + ".csv");
   eval_ecVolRatioBbxFile = std::ofstream("results_ec_volratbbx_" + file_index_str + ".csv");
   eval_resultsFile << "Time (s),Plan duration (s),Plan Length,";
-  evaluator->writeHeader(eval_resultsFile) << ",Step" << std::endl;
+  evaluator->writeHeader(eval_resultsFile) << ",Step,Segment" << std::endl;
   eval_resultsFileOld << "Time (s),Plan duration (s),Plan Length,";
-  evaluator->writeHeaderOld(eval_resultsFileOld) << ",Step" << std::endl;
+  evaluator->writeHeaderOld(eval_resultsFileOld) << ",Step,Segment" << std::endl;
   eval_externalClusterFile << "Time (s),Plan duration (s),Plan Length,";
-  external_cluster_evaluator->writeHeader(eval_externalClusterFile) << ",Step" << std::endl;
+  external_cluster_evaluator->writeHeader(eval_externalClusterFile) << ",Step,Segment" << std::endl;
   eval_plannerStartTime = ros::Time::now();
   eval_accumulatedPlanDuration = 0;
   eval_accumulatedPlanLength = 0;
   eval_current_segment = 0;
-  config.mode = Planner_SAMPLE_AUTOMATIC;
-  updateConfig();
 }
 
 template<typename T>
@@ -200,13 +198,13 @@ bool ViewpointPlanner::saveEvaluatorData(double plan_length, double traj_duratio
   rvp_evaluation::ECEvalParams resEC = external_cluster_evaluator->getCurrentParams();
 
   eval_resultsFile << passed_time << "," << eval_accumulatedPlanDuration << "," << eval_accumulatedPlanLength << ",";
-  evaluator->writeParams(eval_resultsFile, res) << "," << eval_lastStep << std::endl;
+  evaluator->writeParams(eval_resultsFile, res) << "," << eval_lastStep << "," << eval_current_segment << std::endl;
 
   eval_resultsFileOld << passed_time << "," << eval_accumulatedPlanDuration << "," << eval_accumulatedPlanLength << ",";
-  evaluator->writeParamsOld(eval_resultsFileOld, resOld) << "," << eval_lastStep << std::endl;
+  evaluator->writeParamsOld(eval_resultsFileOld, resOld) << "," << eval_lastStep << "," << eval_current_segment << std::endl;
 
   eval_externalClusterFile << passed_time << "," << eval_accumulatedPlanDuration << "," << eval_accumulatedPlanLength << ",";
-  external_cluster_evaluator->writeParams(eval_externalClusterFile, resEC) << "," << eval_lastStep << std::endl;
+  external_cluster_evaluator->writeParams(eval_externalClusterFile, resEC) << "," << eval_lastStep << "," << eval_current_segment << std::endl;
 
   writeVector(eval_fruitCellPercFile, passed_time, res.fruit_cell_percentages) << std::endl;
   writeVector(eval_volumeAccuracyFile, passed_time, res.volume_accuracies) << std::endl;
@@ -217,32 +215,35 @@ bool ViewpointPlanner::saveEvaluatorData(double plan_length, double traj_duratio
   writeVector(eval_ecVolRatioFile, passed_time, resEC.volume_ratios) << std::endl;
   writeVector(eval_ecVolRatioBbxFile, passed_time, resEC.volume_ratios_bbx) << std::endl;
 
-  switch (eval_epEndParam)
+  if (!eval_with_trolley) // Currently no reset for trolley planning
   {
-  case EvalEpisodeEndParam::TIME:
-  {
-    if (passed_time > eval_episode_duration)
+    switch (eval_epEndParam)
+    {
+    case EvalEpisodeEndParam::TIME:
+    {
+      if (passed_time > eval_episode_duration)
+        resetEvaluator();
+      break;
+    }
+    case EvalEpisodeEndParam::PLAN_DURATION:
+    {
+      if (eval_accumulatedPlanDuration > eval_episode_duration)
+        resetEvaluator();
+      break;
+    }
+    case EvalEpisodeEndParam::PLAN_LENGTH:
+    {
+      if (eval_accumulatedPlanLength > eval_episode_duration)
+        resetEvaluator();
+      break;
+    }
+    default:
+    {
+      ROS_ERROR_STREAM("Invalid episode end param");
       resetEvaluator();
-    break;
-  }
-  case EvalEpisodeEndParam::PLAN_DURATION:
-  {
-    if (eval_accumulatedPlanDuration > eval_episode_duration)
-      resetEvaluator();
-    break;
-  }
-  case EvalEpisodeEndParam::PLAN_LENGTH:
-  {
-    if (eval_accumulatedPlanLength > eval_episode_duration)
-      resetEvaluator();
-    break;
-  }
-  default:
-  {
-    ROS_ERROR_STREAM("Invalid episode end param");
-    resetEvaluator();
-    break;
-  }
+      break;
+    }
+    }
   }
   return true;
 }
@@ -2018,6 +2019,32 @@ void ViewpointPlanner::plannerLoop()
 
   for (ros::Rate rate(100); ros::ok() && !shutdown_planner; rate.sleep())
   {
+    if (eval_start)
+    {
+      ROS_INFO_STREAM("Starting evaluation");
+      if (eval_randomize)
+      {
+        evaluator->randomizePlantPositions(eval_randomize_min, eval_randomize_max, eval_randomize_dist);
+      }
+      resetOctomap();
+
+      config.activate_execution = true;
+      config.require_execution_confirmation = false;
+
+      if (eval_with_trolley)
+      {
+        config.plan_with_trolley = true;
+      }
+      else
+      {
+        config.mode = Planner_SAMPLE_AUTOMATIC;
+      }
+      updateConfig();
+
+      eval_running = true;
+      eval_start = false;
+    }
+
     if (config.plan_with_trolley)
     {
       if (!plan_with_trolley_started)

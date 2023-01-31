@@ -179,7 +179,9 @@ private:
   std::default_random_engine random_engine;
 
   // Evaluator variables
-  bool eval_running;
+  bool eval_initialized;
+  std::atomic_bool eval_start;
+  std::atomic_bool eval_running;
   int eval_start_index;
   size_t eval_total_trials;
   EvalEpisodeEndParam eval_epEndParam;
@@ -205,6 +207,7 @@ private:
   octomap::point3d eval_randomize_max;
   double eval_randomize_dist;
   size_t eval_current_segment;
+  bool eval_with_trolley;
 
   std::atomic_bool shutdown_planner;
 
@@ -247,7 +250,8 @@ public:
 
   bool initializeEvaluator(ros::NodeHandle &nh, ros::NodeHandle &nhp);
   bool startEvaluator(size_t numEvals, EvalEpisodeEndParam episodeEndParam, double episodeDuration, int start_index,
-                      bool randomize_plants, const octomap::point3d &min, const octomap::point3d &max, double min_dist);
+                      bool randomize_plants, const octomap::point3d &min, const octomap::point3d &max, double min_dist,
+                      bool with_trolley);
   void setEvaluatorStartParams();
   bool saveEvaluatorData(double plan_length, double traj_duration);
   bool resetEvaluator();
