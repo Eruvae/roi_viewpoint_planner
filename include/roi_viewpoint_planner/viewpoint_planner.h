@@ -236,6 +236,8 @@ public:
   trolley_remote::TrolleyRemote trolley_remote;
   bool plan_with_trolley_started = false;
   ros::Time last_trolley_move_time;
+  double last_trolley_plan_duration;
+  double last_trolley_plan_length;
   int trolley_current_segment = 0;
   int trolley_current_vertical_segment = 0;
   bool trolley_current_flipped = false;

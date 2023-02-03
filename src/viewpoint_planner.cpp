@@ -1964,6 +1964,8 @@ void ViewpointPlanner::flipWsAndSr()
 
 bool ViewpointPlanner::trolleyGoNextSegment()
 {
+  motion_manager->moveToHomePose(); // move arm to home pose before moving to next segment
+
   if (config.trolley_flip_workspace && !trolley_current_flipped)
   {
     flipWsAndSr();
@@ -2033,6 +2035,8 @@ void ViewpointPlanner::plannerLoop()
 
       if (eval_with_trolley)
       {
+        config.trolley_segment_end_param = static_cast<int>(eval_epEndParam);
+        config.trolley_time_per_segment = static_cast<int>(eval_episode_duration);
         config.plan_with_trolley = true;
       }
       else
@@ -2051,12 +2055,31 @@ void ViewpointPlanner::plannerLoop()
       {
         trolley_current_segment = 0;
         last_trolley_move_time = ros::Time::now();
+        last_trolley_plan_duration = eval_accumulatedPlanDuration;
+        last_trolley_plan_length = eval_accumulatedPlanLength;
+
         config.mode = Planner_SAMPLE_AUTOMATIC;
         updateConfig();
         plan_with_trolley_started = true;
       }
 
-      if ((ros::Time::now() - last_trolley_move_time).toSec() > config.trolley_time_per_segment)
+      bool next_segment_condition = true;
+      switch(config.trolley_segment_end_param)
+      {
+      case Planner_TIME:
+        next_segment_condition = (ros::Time::now() - last_trolley_move_time).toSec() > config.trolley_time_per_segment;
+        break;
+      case Planner_PLAN_DURATION:
+        next_segment_condition = (eval_accumulatedPlanDuration - last_trolley_plan_duration) > config.trolley_time_per_segment;
+        break;
+      case Planner_PLAN_LENGTH:
+        next_segment_condition = (eval_accumulatedPlanLength - last_trolley_plan_length) > config.trolley_time_per_segment;
+        break;
+      default:
+        ROS_ERROR_STREAM("Invalid trolley segment end param: " << config.trolley_segment_end_param);
+      }
+
+      if (next_segment_condition)
       {
         if (!trolleyGoNextSegment()) // end reached, go to idle
         {
@@ -2068,6 +2091,8 @@ void ViewpointPlanner::plannerLoop()
           continue;
         }
         last_trolley_move_time = ros::Time::now();
+        last_trolley_plan_duration = eval_accumulatedPlanDuration;
+        last_trolley_plan_length = eval_accumulatedPlanLength;
       }
 
       plannerLoopOnce();
