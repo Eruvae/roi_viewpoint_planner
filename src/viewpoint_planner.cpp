@@ -160,11 +160,11 @@ void ViewpointPlanner::setEvaluatorStartParams()
   eval_ecVolRatioFile = std::ofstream("results_ec_volrat_" + file_index_str + ".csv");
   eval_ecVolRatioBbxFile = std::ofstream("results_ec_volratbbx_" + file_index_str + ".csv");
   eval_resultsFile << "Time (s),Plan duration (s),Plan Length,";
-  evaluator->writeHeader(eval_resultsFile) << ",Step,Segment" << std::endl;
+  evaluator->writeHeader(eval_resultsFile) << ",Step,Segment,Trolley Position,Trolley Height" << std::endl;
   eval_resultsFileOld << "Time (s),Plan duration (s),Plan Length,";
-  evaluator->writeHeaderOld(eval_resultsFileOld) << ",Step,Segment" << std::endl;
+  evaluator->writeHeaderOld(eval_resultsFileOld) << ",Step,Segment,Trolley Position,Trolley Height" << std::endl;
   eval_externalClusterFile << "Time (s),Plan duration (s),Plan Length,";
-  external_cluster_evaluator->writeHeader(eval_externalClusterFile) << ",Step,Segment" << std::endl;
+  external_cluster_evaluator->writeHeader(eval_externalClusterFile) << ",Step,Segment,Trolley Position,Trolley Height" << std::endl;
   eval_plannerStartTime = ros::Time::now();
   eval_accumulatedPlanDuration = 0;
   eval_accumulatedPlanLength = 0;
@@ -188,6 +188,9 @@ bool ViewpointPlanner::saveEvaluatorData(double plan_length, double traj_duratio
 {
   ros::Time currentTime = ros::Time::now();
 
+  double trolley_pos = trolley_remote.getPosition();
+  double trolley_height = trolley_remote.getHeight();
+
   double passed_time = (currentTime - eval_plannerStartTime).toSec();
 
   eval_accumulatedPlanDuration += traj_duration;
@@ -198,13 +201,13 @@ bool ViewpointPlanner::saveEvaluatorData(double plan_length, double traj_duratio
   rvp_evaluation::ECEvalParams resEC = external_cluster_evaluator->getCurrentParams();
 
   eval_resultsFile << passed_time << "," << eval_accumulatedPlanDuration << "," << eval_accumulatedPlanLength << ",";
-  evaluator->writeParams(eval_resultsFile, res) << "," << eval_lastStep << "," << eval_current_segment << std::endl;
+  evaluator->writeParams(eval_resultsFile, res) << "," << eval_lastStep << "," << eval_current_segment << "," << trolley_pos << "," << trolley_height << std::endl;
 
   eval_resultsFileOld << passed_time << "," << eval_accumulatedPlanDuration << "," << eval_accumulatedPlanLength << ",";
-  evaluator->writeParamsOld(eval_resultsFileOld, resOld) << "," << eval_lastStep << "," << eval_current_segment << std::endl;
+  evaluator->writeParamsOld(eval_resultsFileOld, resOld) << "," << eval_lastStep << "," << eval_current_segment << "," << trolley_pos << "," << trolley_height << std::endl;
 
   eval_externalClusterFile << passed_time << "," << eval_accumulatedPlanDuration << "," << eval_accumulatedPlanLength << ",";
-  external_cluster_evaluator->writeParams(eval_externalClusterFile, resEC) << "," << eval_lastStep << "," << eval_current_segment << std::endl;
+  external_cluster_evaluator->writeParams(eval_externalClusterFile, resEC) << "," << eval_lastStep << "," << eval_current_segment << "," << trolley_pos << "," << trolley_height << std::endl;
 
   writeVector(eval_fruitCellPercFile, passed_time, res.fruit_cell_percentages) << std::endl;
   writeVector(eval_volumeAccuracyFile, passed_time, res.volume_accuracies) << std::endl;
@@ -269,7 +272,7 @@ bool ViewpointPlanner::resetEvaluator()
   resetOctomap();
 
   bool success = false;
-  std::vector<double> joint_start_values;
+  /*std::vector<double> joint_start_values;
   if(nhp.getParam("initial_joint_values", joint_start_values))
   {
     success = motion_manager->moveToState(joint_start_values, false, false);
@@ -283,7 +286,7 @@ bool ViewpointPlanner::resetEvaluator()
   else
   {
     ROS_WARN("No inital joint values set");
-  }
+  }*/
 
   if (eval_trial_num < eval_total_trials)
   {
@@ -2070,10 +2073,10 @@ void ViewpointPlanner::plannerLoop()
         next_segment_condition = (ros::Time::now() - last_trolley_move_time).toSec() > config.trolley_time_per_segment;
         break;
       case Planner_PLAN_DURATION:
-        next_segment_condition = (eval_accumulatedPlanDuration - last_trolley_plan_duration) > config.trolley_time_per_segment;
+        next_segment_condition = eval_accumulatedPlanDuration > (1 + eval_current_segment) * config.trolley_time_per_segment;
         break;
       case Planner_PLAN_LENGTH:
-        next_segment_condition = (eval_accumulatedPlanLength - last_trolley_plan_length) > config.trolley_time_per_segment;
+        next_segment_condition = eval_accumulatedPlanLength > (1 + eval_current_segment) * config.trolley_time_per_segment;
         break;
       default:
         ROS_ERROR_STREAM("Invalid trolley segment end param: " << config.trolley_segment_end_param);
@@ -2083,12 +2086,35 @@ void ViewpointPlanner::plannerLoop()
       {
         if (!trolleyGoNextSegment()) // end reached, go to idle
         {
-          plan_with_trolley_started = false;
+          if (eval_trial_num + 1 >= eval_total_trials)
+          {
+            plan_with_trolley_started = false;
+            trolley_current_segment = 0;
+            config.plan_with_trolley = false;
+            config.mode = Planner_IDLE;
+            updateConfig();
+            continue;
+          }
+          motion_manager->moveToHomePose();
+          trolley_remote.moveTo(0);
+          for (ros::Rate waitTrolley(10); ros::ok() && !trolley_remote.isReady(); waitTrolley.sleep());
+          trolley_remote.liftTo(469.0);
+          for (ros::Rate waitTrolley(10); ros::ok() && !trolley_remote.isReady(); waitTrolley.sleep());
+          ros::Duration(5).sleep(); // wait for transform to update
+
+          // reset current segments
           trolley_current_segment = 0;
-          config.plan_with_trolley = false;
-          config.mode = Planner_IDLE;
-          updateConfig();
-          continue;
+          trolley_current_vertical_segment = 0;
+          eval_current_segment = 0;
+          if (config.trolley_flip_workspace && trolley_current_flipped)
+          {
+            flipWsAndSr();
+            trolley_current_flipped = false;
+          }
+
+          motion_manager->moveToHomePose();
+          resetOctomap();
+          resetEvaluator();
         }
         last_trolley_move_time = ros::Time::now();
         last_trolley_plan_duration = eval_accumulatedPlanDuration;
