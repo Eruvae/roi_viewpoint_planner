@@ -12,13 +12,14 @@ class DirectPlannerInterface : public rvp_evaluation::OctreeProviderInterface
 {
 private:
   ViewpointPlanner *planner;
+  rvp_evaluation::MutexRef<boost::mutex> tree_mtx;
 
 public:
   DirectPlannerInterface(roi_viewpoint_planner::ViewpointPlanner *planner);
 
   virtual std::shared_ptr<octomap_vpp::RoiOcTree> getPlanningTree();
   virtual double getTreeResolution();
-  virtual boost::mutex& getTreeMutex();
+  virtual rvp_evaluation::MutexBase& getTreeMutex();
 };
 
 }
